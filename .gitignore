@@ -1,4 +1,5 @@
 scratch*
+*.pdf
 
 # History files
 .Rhistory
