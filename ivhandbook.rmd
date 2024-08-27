@@ -27,7 +27,7 @@ library("car")
 
 # Introduction
 
-This document is a short guide to implementing some of the methods discussed in Mogstad and Torgovitsky ("Instrumental Variables with Heterogeneous Treatment Effects," 2024, _Handbook of Labor Economics_).
+This document is a short guide to implementing some of the methods discussed in Mogstad and Torgovitsky (["Instrumental Variables with Heterogeneous Treatment Effects," 2024, _Handbook of Labor Economics_](https://a-torgovitsky.github.io/ivhandbook.pdf)).
 It describes how to:
 
 - Conduct a RESET test of the null hypothesis that a linear IV specification is weakly causal.
