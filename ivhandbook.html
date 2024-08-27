@@ -344,7 +344,7 @@ ivreg(
 ##   term  estimate std.error statistic  p.value
 ##   &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
 ## 1 D        0.188    0.0261      7.19 7.92e-13</code></pre>
-<p>If there were no covariates, and if the usual monotonicity and full exogeneity conditions are satisfied, then Card’s estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment. However, <span class="citation">Blandhol et al. (2022)</span> show that this interpretation generally breaks down when there are covariates. In particular, they show that unless the conditional mean of the instrument given the covariates is linear, the estimand cannot be interpreted as a “weakly causal” quantity that gives non-negative weight to all treatment effects. They describe the property that the conditional mean of the instrument is linear by saying that the linear IV specification has “rich covariates.”</p>
+<p>If there were no covariates, and given the usual monotonicity and full exogeneity conditions satisfied, then Card’s estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment. However, <span class="citation">Blandhol et al. (2022)</span> show that this interpretation generally breaks down when there are covariates. In particular, they show that unless the conditional mean of the instrument given the covariates is linear, the estimand cannot be interpreted as a “weakly causal” quantity that gives non-negative weight to all treatment effects. They describe the property that the conditional mean of the instrument is linear by saying that the linear IV specification has “rich covariates.”</p>
 <p>Rich covariates can be tested using a test of functional form for linear regression. The most well-known is the <span class="citation">Ramsey (1969)</span> RESET test, which is easy to implement. The <code>lmtest</code> package contains a built-in routine called <code>resettest</code>, which can be used as follows.</p>
 <pre class="r"><code>library(&quot;lmtest&quot;)
 library(&quot;car&quot;)
@@ -358,9 +358,9 @@ resettest(lr_zx, type = &quot;fitted&quot;, vcov = function(x) vcovHC(x, type = 
 ## data:  lr_zx
 ## RESET = 9.8868, df1 = 2, df2 = 2995, p-value = 5.252e-05</code></pre>
 </div>
-<div id="multicollinearity-in-r" class="section level2" number="3.2">
-<h2><span class="header-section-number">3.2</span> Multicollinearity in R</h2>
-<p>The <code>resettest</code> function doesn’t seem to be coded in a way that handles multicollinearity. For example, it throws an error about “aliased coefficients” if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix, although not in the homoskedastic case. (“Aliased coefficients” being another phrase for what economists would typically call perfect multicollinearity.)</p>
+<div id="reset-with-multicollinearity-in-r" class="section level2" number="3.2">
+<h2><span class="header-section-number">3.2</span> RESET with multicollinearity in R</h2>
+<p>The <code>resettest</code> function doesn’t seem to be coded in a way that handles multicollinearity. For example, it throws an error about “aliased coefficients” if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix. (“Aliased coefficients” being another phrase for what economists would typically call perfect multicollinearity.)</p>
 <pre class="r"><code>covs_flist_mc &lt;- paste(covs_flist, &quot;+ reg667&quot;)
 lr_zx &lt;- lm(data = card, formula = as.formula(paste(&quot;Z ~ &quot;, covs_flist_mc)))
 lr_zx %&gt;%

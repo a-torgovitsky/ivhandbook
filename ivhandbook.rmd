@@ -113,7 +113,7 @@ ivreg(
   filter(term == "D")
 ```
 
-If there were no covariates, and if the usual monotonicity and full exogeneity conditions are satisfied, then Card's estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment.
+If there were no covariates, and given the usual monotonicity and full exogeneity conditions satisfied, then Card's estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment.
 However, @blandholbonneymogstadtorgovitsky2022 show that this interpretation generally breaks down when there are covariates.
 In particular, they show that unless the conditional mean of the instrument given the covariates is linear, the estimand cannot be interpreted as a "weakly causal" quantity that gives non-negative weight to all treatment effects.
 They describe the property that the conditional mean of the instrument is linear by saying that the linear IV specification has "rich covariates."
@@ -131,10 +131,10 @@ lr_zx <- lm(data = card, formula = as.formula(paste("Z ~ ", covs_flist)))
 resettest(lr_zx, type = "fitted", vcov = function(x) vcovHC(x, type = "HC1"))
 ```
 
-## Multicollinearity in R
+## RESET with multicollinearity in R
 
 The `resettest` function doesn't seem to be coded in a way that handles multicollinearity.
-For example, it throws an error about "aliased coefficients" if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix, although not in the homoskedastic case.
+For example, it throws an error about "aliased coefficients" if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix.
 ("Aliased coefficients" being another phrase for what economists would typically call perfect multicollinearity.)
 
 ```{r ramsey-lmtest-heteroskedastic-failure}
