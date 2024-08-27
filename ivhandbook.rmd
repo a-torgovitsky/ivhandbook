@@ -41,6 +41,8 @@ Then I'll go back and show the Stata equivalent.
 
 Any questions or problems, feel free to [post an issue](https://github.com/a-torgovitsky/ivhandbook/issues).
 
+Code for reproducing the results in the handbook chapter is available in the [ivhandbookReplication repository](https://github.com/a-torgovitsky/ivhandbookReplication/).
+
 # Packages and data
 
 ## R
