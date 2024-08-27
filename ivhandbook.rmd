@@ -1,0 +1,726 @@
+---
+title: "Instrumental Variables with Unobserved Heterogeneity in Treatment Effects"
+subtitle: "A Guide for Implementation in `R` and Stata"
+author: "Alexander Torgovitsky"
+date: "August, 2024"
+output:
+  html_document:
+    css: "custom.css"
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    number_sections: true
+bibliography: bibliography.bib
+---
+
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(error = TRUE) # Continue compiling and show errors
+knitr::opts_chunk$set(cache = TRUE)
+library("ivreg")
+library("lmtest")
+library("sandwich")
+library("car")
+```
+
+
+# Introduction
+
+This document is a short guide to implementing some of the methods discussed in Mogstad and Torgovitsky ("Instrumental Variables with Heterogeneous Treatment Effects," 2024, _Handbook of Labor Economics_).
+It describes how to:
+
+- Conduct a RESET test of the null hypothesis that a linear IV specification is weakly causal.
+- Implement double/debiased machine learning (DDML) estimators that are ensured to be weakly causal.
+- Use an instrument propensity score weighting estimator to estimate an unconditional LATE.
+- Estimate and aggregate the marginal treatment effect (MTE) curve for a binary treatment.
+
+The document contains code samples for both `R` and Stata.
+In each section, I'll briefly describe the theoretical background in the context of the `R` code.
+Then I'll go back and show the Stata equivalent.
+
+# Packages and data
+
+## R
+
+I'm going to use some `tidyverse` tools in the following.
+Install them from CRAN with `install.packages(c("tidyverse", "broom", "purrr"))`.
+
+```{r tidyverse, results = 'hide', message = FALSE, warning = FALSE}
+library("tidyverse")
+library("broom")
+library("purrr")
+```
+You'll see where I load other packages in the code below.
+These can be installed in the same way.
+
+## Stata
+
+You'll need to install some modules from SSC.
+I'll show you which ones when we get there.
+
+## Card data
+
+The first three topics will be illustrated with the well-known @card1993wp [(link)]() extract of the NLSY79.
+Card used distance to a four-year college (`nearc4`) as an instrument for educational attainment (`educ`) to estimate the effect of education on wages (`lwage`, measured in logs), also commonly described as the returns to education.
+The treatment is multivalued and the instrument is binary.
+
+```{r loaddata-card}
+card <- haven::read_dta("card.dta")
+```
+
+# Does linear IV estimate a causal effect?
+
+## Background
+
+Conditioning on covariates is important for Card's argument that distance to college is exogenous.
+For example, urban areas might be more likely to be close to a four-year college while also being relatively high-wage labor markets.
+Not conditioning on covariates leads to substantially different point estimates.
+
+```{r card-base}
+card <- card %>%
+  mutate(
+    Y = lwage,
+    D = educ,
+    Z = nearc4
+  )
+covs <- c(
+  "south", "south66", "smsa", "smsa66",
+  "reg661", "reg662", "reg663", "reg664", "reg665", "reg666", "reg668",
+  "black", "exper", "expersq"
+)
+library("ivreg")
+library("lmtest")
+library("sandwich")
+
+# This is Card Table 5, column (3)
+covs_flist <- paste(covs, collapse = " + ")
+ivreg(
+  data = card,
+  formula = as.formula(paste("Y ~", covs_flist, "| D | Z"))
+) %>%
+  coeftest(vcov = vcovHC, type = "HC1") %>%
+  tidy() %>%
+  filter(term == "D")
+
+# Not controlling for any covariates leads to considerably larger estimates
+ivreg(
+  data = card,
+  formula = "Y ~ D | Z"
+) %>%
+  coeftest(vcov = vcovHC, type = "HC1") %>%
+  tidy() %>%
+  filter(term == "D")
+```
+
+If there were no covariates, and if the usual monotonicity and full exogeneity conditions are satisfied, then Card's estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment.
+However, @blandholbonneymogstadtorgovitsky2022 show that this interpretation generally breaks down when there are covariates.
+In particular, they show that unless the conditional mean of the instrument given the covariates is linear, the estimand cannot be interpreted as a "weakly causal" quantity that gives non-negative weight to all treatment effects.
+They describe the property that the conditional mean of the instrument is linear by saying that the linear IV specification has "rich covariates."
+
+Rich covariates can be tested using a test of functional form for linear regression.
+The most well-known is the @ramsey1969jrsssbm RESET test, which is easy to implement.
+The `lmtest` package contains a built-in routine called `resettest`, which can be used as follows.
+
+```{r ramsey-homoskedastic}
+library("lmtest")
+library("car")
+# Regress instrument Z on linear specification of covariates X
+lr_zx <- lm(data = card, formula = as.formula(paste("Z ~ ", covs_flist)))
+# Heteroskedasticity-robust RESET test
+resettest(lr_zx, type = "fitted", vcov = function(x) vcovHC(x, type = "HC1"))
+```
+
+## Multicollinearity in R
+
+The `resettest` function doesn't seem to be coded in a way that handles multicollinearity.
+For example, it throws an error about "aliased coefficients" if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix, although not in the homoskedastic case.
+("Aliased coefficients" being another phrase for what economists would typically call perfect multicollinearity.)
+
+```{r ramsey-lmtest-heteroskedastic-failure}
+covs_flist_mc <- paste(covs_flist, "+ reg667")
+lr_zx <- lm(data = card, formula = as.formula(paste("Z ~ ", covs_flist_mc)))
+lr_zx %>%
+  tidy() %>%
+  filter(is.na(estimate))
+resettest(lr_zx, type = "fitted", vcov = function(x) vcovHC(x, type = "HC1"))
+```
+
+Having some multicollinearity is common in economic applications, which frequently include a variety of fixed effects as additional controls.
+Removing the collinear terms by hand can be tedious.
+So this drawback of `resettest` is a bit annoying.
+However, it's also easy to implement a RESET test yourself as a standard F-test using tools that are coded defensively enough to handle multicollinearity:
+
+```{r ramsey-heteroskedastic-linearhypothesis}
+card %>%
+  mutate(
+    yhat = lr_zx$fitted.values,
+    yhat2 = yhat^2,
+    yhat3 = yhat^3
+  ) -> card
+lrram <- lm(
+  data = card,
+  formula = as.formula(paste("Z ~ yhat2 + yhat3 + ", covs_flist_mc))
+)
+linearHypothesis(lrram, c("yhat2", "yhat3"), white.adjust = "hc1", singular.ok = TRUE)
+```
+Notice that both the test statistic and p-value match what we had above using `resettest` in the specification without the collinear indicator.
+The inclusion of the option `singular.ok = TRUE` is necessary or else `linearHypothesis` will also complain about multicollinearity.
+(I don't think there is a similar option that one can pass to `resettest`, which ultimately calls `waldtest.lm`.)
+Alternatively, it's not that hard to do all of this by hand either.
+
+```{r ramsey-heteroskedastic-byhand}
+yhats <- c("yhat2", "yhat3")
+bhat <- lrram$coef[yhats]
+vc <- vcovHC(lrram, type = "HC1")[yhats, yhats]
+ts <- t(bhat) %*% solve(vc) %*% bhat # Wald statistic
+pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above
+ts / 2 # F-statistic, matches above
+```
+
+However you do it, the conclusion from the RESET test in this case is an overwhelming rejection of the null hypothesis.
+The null hypothesis is equivalent to the statement that the specification has rich covariates, which in turn is necessary (and in many cases sufficient) for the IV estimate to have a weakly causal interpretation.
+So rejecting the null here means that there is strong statistical evidence that Card's estimate is not weakly causal; it is not a non-negatively weighted average of treatment effects.
+
+## Stata
+
+A RESET test can be implemented in Stata with the postestimation command `estat ovtest`.
+The documentation on `ovtest` is pretty sparse, as are the options.
+As far as I can tell, the Stata routine cannot be made robust to heteroskedasticity, nor can the powers of the fitted values used in the test be changed.
+Here's a demonstration of that, as well as code that allows you to implement the RESET test directly and get around these limitations.
+
+```{stata stata-ramsey, echo = FALSE} 
+use card.dta, replace
+
+local Y lwage
+local D educ
+local Z nearc4
+local X south smsa smsa66 ///
+  reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+  black exper expersq
+
+// Use Stata's built-in
+qui reg `Z' `X'
+estat ovtest
+display "`r(F)'"
+
+// One might expect this to be different, but it's not
+qui reg `Z' `X', vce(robust)
+estat ovtest
+display "`r(F)'" // Same, even thought we used robust standard errors
+
+// So to account for heteroskedasticity we can implement the test this way
+qui reg `Z' `X', vce(robust)
+predict yhat
+gen yhat2 = yhat^2
+gen yhat3 = yhat^3
+qui reg `Z' `X' yhat2 yhat3, vce(robust)
+test yhat2 yhat3 // This matches the results from R
+
+// Here's what Stata is doing by default
+gen yhat4 = yhat^4
+qui reg `Z' `X' yhat2 yhat3 yhat4
+test yhat2 yhat3 yhat4
+return list // Matches the homoskedastic test
+```
+
+# Double/debiased machine learning
+
+## Motivation
+
+Using a nonparametric functional form for covariates is one way to address the problem of not having rich covariates.
+A low-tech nonparametric approach is to construct a saturated regression, in which there is one bin for each covariate value.
+These are the types of specifications that are assumed in @angristimbens1995jotasa and @angristpischke2009 to justify linear IV estimates as representing something that is weakly causal.
+But using such a specification in Card's application---as in many/most others---is not going to be feasible:
+
+```{r number-of-bins}
+card %>%
+  select(all_of(covs)) %>%
+  summarize(across(everything(), ~ n_distinct(.))) %>%
+  as.matrix() %>%
+  prod()
+nrow(card)
+```
+
+A saturated regression in Card's case would have over 2.3 million regressors for only about 3,000 observations!
+
+More sophisticated nonparametric methods can get around this limitation by engaging in some data-driven model selection.
+A particularly attractive approach for the current problem are the double/debiased machine learning (DDML) estimators discussed by @chernozhukovchetverikovdemirerduflohansenetal2018ej.
+These estimators make use of two techniques to estimate a version of the linear IV model that controls for covariates in an unknown way.
+The first is a reformulation of the implicit moment condition in linear IV into a new "orthogonalized" moment condition that incorporates the idea from the "doubly-robust" literature that the product of two small quantities is an even smaller quantity.
+This allows for nonparametric estimators that are more flexible, and hence converge at slower rates, because the product of two slowly-converging quantities can converge at the usual parametric rate.
+The second element of the DDML estimator is cross-fitting, which is used to defend against overfitting similar to the way that sample splitting would, but without the attendant loss of data.
+
+In the following, I'll demonstrate the use of the `ddml` package for `R` @ahrenshansenschafferwiemann2024a.
+An alternative is the `DoubleML` package @bachkurzchernozhukovspindlerklaassen2024jss.
+The attractions of `ddml` are that the learning curve is a bit flatter, there is a closely-related Stata module, which I'll demonstrate below, and that it allows for a technique called short-stacking [@ahrenshansenschafferwiemann2024].
+Stacking is a technique that combines an ensemble of different ML algorithms together and then chooses a convex-weighted average of the result based on which ones perform the best in out-of-sample prediction.
+Short-stacking is a computationally attractive modification, so called because it takes a computational short-cut when determining the weights.
+
+I mention these theoretical details to motivate three aspects in the implementation:
+
+1. The ML algorithms that will be used are flexible ones like random forests, gradient-boosted trees, or neural networks, all of which can reasonably be viewed as nonparametric.
+This is why the orthogonalization and cross-fitting implemented by DDML are important.
+2. Cross-fitting introduces an additional layer of randomness because the folds are chosen randomly. This will be addressed by running the procedure several times and accounting for the variation across runs when computing standard errors.
+3. Short-stacking means we can combine multiple ML algorithms together. As @ahrenshansenschafferwiemann2023 demonstrate, individual ML algorithms can perform poorly.
+Combining multiple ML algorithms together through stacking limits the risk that a poor algorithm exerts much influence on the final estimate.
+
+## R
+
+The main step in using DDML is defining the ML algorithms.
+This is done with a list of lists.
+Each list in the list of lists has two components: (i) the name of the function used to call the algorithm and (ii) the additional arguments passed to the function.
+For the former, `ddml` includes wrappers to `ranger` and `xgboost`, which are popular packages for random forests and gradient-boosted trees, respectively.
+One can also define additional wrappers; see [this bit of code](https://github.com/a-torgovitsky/ivhandbookReplication/blob/faa0c23335acafc39268386dca6cde64ab82ecee/R/card-ddml.R#L1C1-L73C2) in the replication repository for an example using neural networks from the `nnet` package.
+The second argument to each list is a set of tuning parameters.
+It can be difficult to know how to set these a priori, so it's reasonable to view the same algorithm with different tuning parameters as a separate ML algorithm.
+
+Here's an example with six algorithms consisting of three random forests and three gradient-boosted trees:
+
+```{r ddml-packages}
+library("ddml")
+
+learners <- list(
+  list(
+    fun = ddml::mdl_xgboost,
+    args = list(max_depth = 2)
+  ),
+  list(
+    fun = ddml::mdl_xgboost,
+    args = list(eta = .01)
+  ),
+  list(
+    fun = ddml::mdl_xgboost,
+    args = list(eta = .05, max_depth = 3)
+  ),
+  list(
+    fun = ddml::mdl_ranger,
+    args = list()
+  ),
+  list(
+    fun = ddml::mdl_ranger,
+    args = list(max.depth = 4)
+  ),
+  list(
+    fun = ddml::mdl_ranger,
+    args = list(max.depth = 3, mtry = 5)
+  )
+)
+```
+
+How did I choose these tuning parameters?
+Almost completely at random!
+I have a sense of which ones are thought to be important based on my pedestrian understanding of how the algorithms work (at the level of say @hastietibshiranifriedman2009).
+Then I just tried a few values different than the default.
+This is one of the drawbacks of using an ML approach: even though model selection is completely data-driven, the analyst still has a large number of choices to make in how the model selection is implemented and the computational cost of exploring them thoroughly is high.
+Short-stacking will hopefully help save us from making bad choices.
+
+Now that we have these learners defined, we can call `ddml` with short-stacking.
+The specific DDML estimator we want in for this case is `ddml_pliv` for "partially linear IV."
+
+```{r ddml-pliv, results = 'hide'}
+Y <- as.matrix(card$Y)
+D <- as.matrix(card$D)
+Z <- as.matrix(card$Z)
+X <- as.matrix(card[, covs])
+
+# I'll define a list of arguments so I can reuse it below
+args <- list(
+  y = Y, D = D, Z = Z, X = X,
+  learners = learners,
+  shortstack = TRUE,
+  ensemble_type = "nnls1", # Use non-negative least squares to produce weights
+  sample_folds = 5,
+  silent = TRUE,
+  custom_ensemble_weights = diag(length(learners)) # Useful for diagnostics
+)
+set.seed(52)
+result <- do.call(ddml_pliv, args)
+```
+The `result` object contains quite a bit of information useful for diagnostics.
+If you just want the point estimate and standard error, they can be obtained like this:
+
+```{r ddml-pliv-point-estimate}
+s <- summary(result)
+s["D_r", "Estimate", "nnls1"] # point estimate
+s["D_r", "Std. Error", "nnls1"] # standard error
+```
+Because we set `custom_ensemble_weights` equal to an identity matrix, we can also recover the point estimates and standard errors associated with each individual learner:
+
+```{r ddml-compare-point-estimates}
+t(s["D_r", c("Estimate", "Std. Error"), ])
+```
+
+Not all of the learners get weighted equally in the `nnls1` estimate.
+You can get the weights that go into each function that is estimated nonparametrically by looking at `result$weights`:
+
+```{r ddml-resulting-weights}
+result$weights %>%
+  map_dfr(~ .x[, "nnls1"], .id = "component") %>%
+  round(digits = 3)
+```
+
+So all of the algorithms are doing a bit of work here except for the fifth one.
+
+Finally, remember that there is some randomness in these estimates due to the cross-fitting.
+So it's good practice to replicate the procedure multiple times and account for the variance across replications when reporting standard errors.
+The `ddml` package doesn't have built-in functionality for this, but it's easy enough to make your own loop.
+Here I'll loop ten times, but in practice you probably want to be a bit more thorough.
+
+```{r loop-ddml-pliv}
+pliv_list <- lapply(seq_len(10), function(i) do.call(ddml_pliv, args))
+```
+
+@chernozhukovchetverikovdemirerduflohansenetal2018ej recommend reporting the median with the standard errors adjusted as follows to account for randomness across replications.
+
+```{r ddml-pliv-final-estimate}
+lapply(pliv_list, function(r) {
+  s <- summary(r)
+  tibble(
+    est = s["D_r", "Estimate", "nnls1"],
+    se = s["D_r", "Std. Error", "nnls1"]
+  )
+}) %>%
+  bind_rows() -> pliv
+median(pliv$est) # Recommended point estimate
+sqrt(median(pliv$se^2 + (pliv$est - median(pliv$est))^2)) # Recommended SE
+```
+In terms of the theory for heterogeneous treatment effects, this final estimate of `r round(median(pliv$est), digits = 3)` is one that can be said to be weakly causal with only nonparametric justification.
+Notice that it's not much different than the original linear IV estimate in this case, but that doesn't mean that the original linear IV estimate was somehow "correct."
+Whether an estimand is weakly causal is about it's underlying interpretation in terms of treatment effects.
+A non-negatively weighted estimand can be equal to a negatively-weighted one, but that doesn't mean that they should be equally preferred.
+
+## Stata
+
+The Stata package is also called `ddml`.
+It can be installed with `ssc install ddml`, but as of this writing that version is outdated, and it seems that some of the syntax has changed relative to what I show below.
+Install the more recent version this way instead:
+```{stata, eval = FALSE}
+net install ddml, ///
+  from(https://raw.githubusercontent.com/aahrens1/ddml/master) ///
+  replace
+```
+You also need to install the `pystacked` module with `ssc install pystacked`, which needs to be able to find the Python module `scikit-learn` (e.g. `pip install scikit-learn`).
+Details are given [here](https://statalasso.github.io/docs/python/).
+
+Once you've got everything running, the process of calling `ddml` is similar to `R`.
+Here's sample code that tries to implement similar estimates to the ones for `R` above.
+The ML algorithms being called out to in the background are from different implementations (`scikit-learn` for Python instead of `ranger` and `xgboost` for `R`), which likely explains the small differences in results.
+I've tried to set the primary tuning parameters to be the same, but there are quite a few default ones, and some are probably slightly different.
+There are likely also small computational differences in how the algorithms are implemented.
+
+```{stata stata-ddml-pliv, echo = FALSE}
+use card.dta, replace
+local Y lwage
+local D educ
+local Z nearc4
+local X south smsa smsa66 ///
+  reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+  black exper expersq
+
+// Define six different learners
+local l_xg1 method(gradboost) opt(max_depth(2) learning_rate(.3))
+local l_xg2 method(gradboost) opt(max_depth(6) learning_rate(.01))
+local l_xg3 method(gradboost) opt(max_depth(3) learning_rate(.05))
+local l_rf1 method(rf) opt(n_estimators(500) max_features(3))
+local l_rf2 method(rf) opt(n_estimators(500) max_features(3) max_depth(4))
+local l_rf3 method(rf) opt(n_estimators(500) max_features(5) max_depth(3))
+
+set seed 534023
+ddml init iv, reps(5) // You should set reps higher in practice
+ddml E[Y|X]: pystacked `Y' `X' || ///
+             `l_xg1' || `l_xg2' || `l_xg3' || `l_rf1' || `l_rf2' || `l_rf3', ///
+             type(reg) njobs(-1)
+ddml E[D|X]: pystacked `D' `X' || ///
+             `l_xg1' || `l_xg2' || `l_xg3' || `l_rf1' || `l_rf2' || `l_rf3', ///
+             type(reg) njobs(-1)
+ddml E[Z|X]: pystacked `Z' `X' || ///
+             `l_xg1' || `l_xg2' || `l_xg3' || `l_rf1' || `l_rf2' || `l_rf3', ///
+             type(reg) njobs(-1)
+// Short-stack and do not use standard stacking for faster computation
+ddml crossfit, shortstack nostdstack finalest(nnls1)
+ddml estimate, robust
+```
+
+The result ends up being similar to that found in `R` despite the small differences in implementation.
+
+
+# Estimating unconditional LATEs and ACRs
+
+## Motivation
+
+The DDML PLIV estimate is weakly causal, which means that it is a non-negatively weighted average of ACRs for each covariate bin.
+The weights depend on the amount of treatment variation that the instrument induces in each covariate bin.
+The overall weighted average is difficult to interpret because it represents treatment effects for many different subpopulations all averaged together in ways that reflect more than just their proportion of the population.
+An easier quantity to interpret is the unconditional ACR, which is what one would be estimating if covariates were not needed to justify the instrument.
+
+## R
+
+There are a few ways to estimate an unconditional ACR.
+I'll focus on two that I think are relatively easy to implement.
+
+The first is a different DDML estimator.
+The details are basically the same as in the previous section, except that the estimand is different and there are more unknown functions that need to be estimated nonparametrically.
+The syntax changes in only minor ways from the previous section.
+
+```{r loop-ddml-late, warning = FALSE}
+acr_list <- lapply(seq_len(10), function(i) do.call(ddml_late, args))
+```
+
+Note that you'll get a fair number of warnings about trimming here that can be ignored unless there are a very large number. (I've suppressed them in the output).
+
+```{r ddml-late-process}
+lapply(acr_list, function(r) {
+  s <- summary(r)
+  tibble(
+    est = s["nnls1", "Estimate"],
+    se = s["nnls1", "Std. Error"]
+  )
+}) %>%
+  bind_rows() -> acr
+median(acr$est) # Point estimate
+sqrt(median(acr$se^2 + (acr$est - median(acr$est))^2)) # SE
+```
+
+Notice that this estimate is quite a bit different from both the linear IV and PLIV estimates, while having a similar standard error.
+The way in which the treatment effects are weighted across covariate groups evidently matters quite a bit here.
+
+An alternative way to estimate the ACR is with an instrument propensity score weighting (IPSW) approach due to @tan2006jasa and @frolich2007joe.
+@sloczynskiuysalwooldridge2024job&es propose a weight-normalized version of this estimator, arguing that the weight normalization is important for giving the estimator sensible invariance properties and consequently also for its statistical stability.
+The derivation of the estimator is exposited in Section 4.2.1 of our handbook chapter, but the short story is that it can be viewed as a ratio of two propensity score weighting estimators of the average treatment effect.
+In the numerator is the average treatment effect of the instrument on the outcome, which can be seen as a nonparametric counterpart to the usual reduced form.
+In the denominator is the average treatment effect of the instrument on the treatment, which can be seen as a nonparametric counterpart to the usual first stage.
+Both averages are taken across covariates.
+The ratio can be shown to be equal to the unconditional LATE when the treatment is binary or the unconditional ACR when the treatment is ordered.
+Note that a binary instrument remains important here.
+
+I'm not aware of packages that implement this procedure in `R`, but it's easy to implement by hand.
+First, we estimate the propensity score, which in context means the _instrument_ propensity score, that is, the probability that the binary instrument is one given the covariates.
+I'll do this with a logit model.
+Then, we use the fitted values from the logit model to constructed two weighted averages of the outcome and two weighted averages of the treatment.
+The ratio of the differences in these two weighted outcomes becomes the estimate of the LATE.
+Here's the procedure as a function:
+
+```{r logit-kappa-weighting}
+# IPSW = instrument propensity score weighting
+ipsw <- function(data, f) {
+  logit <- glm(data = data, f = f, family = binomial)
+  data %>%
+    mutate(
+      Q = predict(logit, type = "response"), # instrument propensity score
+      W1 = Z / Q,
+      W0 = (1 - Z) / (1 - Q),
+      num1 = Y * W1,
+      num0 = Y * W0,
+      den1 = D * W1,
+      den0 = D * W0
+    ) %>%
+    summarize(across(c(W0, W1, num0, num1, den0, den1), sum)) -> x
+  num <- (x$num1 / x$W1 - x$num0 / x$W0)
+  den <- (x$den1 / x$W1 - x$den0 / x$W0)
+  num / den
+}
+ipsw(card, paste("Z ~ ", covs_flist))
+```
+@sloczynskiuysalwooldridge2024job&es provide analytic standard error formulas, but they are quite complicated.
+Bootstrapping the standard errors is a reasonable alternative.
+
+```{r ipsw-bootstrap}
+sapply(seq_len(500), function(i) {
+  idx <- sample(nrow(card), nrow(card), replace = TRUE)
+  cardbs <- card[idx, ]
+  ipsw(cardbs, paste("Z ~ ", covs_flist))
+}) %>%
+  sd()
+```
+
+This estimate is similar to the DDML ACR estimate with a similar standard error.
+It relies on the parametric assumption that we've correctly specified the probability of the instrument given the covariates as a logit.
+The DDML estimate by contrast is arguably fully nonparametric (given sufficiently expressive ML algorithms), but requires estimating a number of functions.
+Depending on your faith in nonparametrics, you might like this more or less.
+Regardless, the fact that both estimates are considerably different from the PLIV estimate should give pause to the idea that all non-negatively weighted averages are equally valuable.
+
+## Stata
+
+It is unfortunately not possible to implement the DDML estimates in Stata at current using the `ddml` package, because the authors require the treatment to be binary in their error-checking.
+I expect this is because it's not widely appreciated that the same approach estimates an unconditional ACR for multivalued treatments.
+Hopefully the authors will fix this soon.
+(You could also try going into the code and removing the error-checking yourself. Everything substantive with the procedure should work out just fine.)
+In the meantime, we can demonstrate using `ddml` in Stata to estimate an unconditional LATE with a binarized treatment.
+
+```{stata ddml-late-stata, echo = FALSE}
+use card.dta, replace
+local Y lwage
+// ddml for Stata throws an error if D is not binary
+gen college = educ >= 16
+local D college
+local Z nearc4
+local X south smsa smsa66 ///
+  reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+  black exper expersq
+
+local l_xg1 method(gradboost) opt(max_depth(2) learning_rate(.3))
+local l_xg2 method(gradboost) opt(max_depth(6) learning_rate(.01))
+local l_xg3 method(gradboost) opt(max_depth(3) learning_rate(.05))
+local l_rf1 method(rf) opt(n_estimators(500) max_features(3))
+local l_rf2 method(rf) opt(n_estimators(500) max_features(3) max_depth(4))
+local l_rf3 method(rf) opt(n_estimators(500) max_features(5) max_depth(3))
+
+set seed 534023
+ddml init interactiveiv, reps(5) // Set higher in practice
+ddml E[Y|X,Z]: pystacked `Y' `X' || ///
+             `l_xg1' || `l_xg2' || `l_xg3' || `l_rf1' || `l_rf2' || `l_rf3', ///
+             type(reg) njobs(-1)
+ddml E[D|X,Z]: pystacked `D' `X' || ///
+             `l_xg1' || `l_xg2' || `l_xg3' || `l_rf1' || `l_rf2' || `l_rf3', ///
+             type(reg) njobs(-1)
+ddml E[Z|X]: pystacked `Z' `X' || ///
+             `l_xg1' || `l_xg2' || `l_xg3' || `l_rf1' || `l_rf2' || `l_rf3', ///
+             type(reg) njobs(-1)
+ddml crossfit, shortstack nostdstack finalest(nnls1)
+ddml estimate, robust
+```
+
+Implementing the IPSW estimator is easier in Stata than `R` thanks to @sloczynskiuysalwooldridge2024job&es, who provided a companion module with their paper.
+The module can be installed with `ssc install kappalate`.
+(The name `kappalate` is a reference to @abadie2003joe's $\kappa$, to which the argument has some relationship, although really it originates from a simpler argument due to @tan2006jasa and @frolich2007joe.)
+The module is quite easy to use and also provides analytic standard error estimates.
+
+```{stata kappalate-stata, echo = FALSE}
+use card.dta, replace
+local Y lwage
+local D educ
+local Z nearc4
+local X south smsa smsa66 ///
+  reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+  black exper expersq
+
+kappalate `Y' (`D' = `Z') `X', zmodel(logit)
+```
+
+Notice that the estimate is identical to the one I computed in `R` above.
+The analytic standard errors are similar to the bootstrapped standard errors.
+
+# Marginal treatment effects with a binary treatment
+
+## Motivation
+
+Marginal treatment effect (MTE) methods use extrapolation to build estimates of quantities like the average treatment effect or average treatment on the treated that are not nonparametrically point identified under just exogeneity and monotonicity.
+See Section 4 of the handbook chapter for a thorough discussion.
+The most common implementation of the MTE idea is with a binary treatment, which is what we'll explore here, since this is the only case for which software packages have been developed so far.
+Methods for multivalued treatments currently need to be coded up by hand.
+Section 4.5 of the handbook chapter provides some details for a linear regression based approach that extends the binary treatment case to ordered treatments.
+
+## Gelbach data
+
+We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by @gelbach2002taer [(link)](url)  that consists of single mothers whose youngest child was five years old in 1980.
+Gelbach used quarter of birth (`quarter`) as an instrument for public school enrollment (`public`) to estimate the effect of public school attendance on whether a mother worked (`work79` in the following).
+The treatment is binary and the instrument is multivalued.
+
+```{r load-data-gelbach}
+gelbach <- haven::read_dta("gelbach.dta")
+```
+
+## R
+
+The `ivmte` package developed by @sheatorgovitsky2023os can be used to implement MTE methods for a binary treatment.
+The package can be installed from CRAN, or directly from GitHub for the most up-to-date version by `devtools::install_github("jkcshea/ivmte")`.
+The following code shows how to use `ivmte` to estimate the average treatment effect through MTE extrapolation.
+The marginal treatment response (MTR) curves are specified as linear and additive in covariates.
+
+```{r ivmte}
+library(ivmte)
+covlist <- c(
+  "white",
+  "num612",
+  "num1317",
+  "numge18",
+  "othrlt18",
+  "othrge18",
+  "grade",
+  "centcity",
+  "age",
+  "age2"
+)
+
+set.seed(393813)
+f_covlist <- paste(covlist, collapse = " + ")
+f_pscore <- as.formula(paste("public ~ quarter + ", f_covlist))
+f_mtr <- as.formula(paste("~ u + ", f_covlist))
+nbs <- 10 # Make this larger in practice
+args <- list(
+  data = gelbach,
+  outcome = "work79",
+  propensity = f_pscore,
+  target = "ate",
+  m0 = f_mtr,
+  m1 = f_mtr,
+  point = TRUE,
+  bootstraps = nbs
+)
+r <- do.call(ivmte::ivmte, args)
+r$point.estimate
+r$point.estimate.se
+```
+
+The `ivmte` package contains much more functionality; for full details, [see the repository](https://github.com/jkcshea/ivmte) or [the accompanying paper](https://muse.jhu.edu/pub/56/article/883476/pdf).
+Here's what it is doing under the hood in this simple example:
+
+```{r mte-r-byhand}
+# This function estimate the MTE and the implied ATE
+mte_ate <- function(data) {
+  pscore <- glm(data = data, f = f_pscore, family = binomial)
+  f_mtr <- as.formula(paste("work79 ~ fp + ", f_covlist))
+
+  sapply(0:1, function(d) { # E[Y(d)] for d = 0,1
+    # "fp" is function of p in the implied E[Y | D,X,Z]
+    if (d == 1) {
+      data$fp <- predict(pscore, type = "response") / 2
+    } else {
+      data$fp <- (1 + predict(pscore, type = "response")) / 2
+    }
+    # Regress Y on 1, fp, x stratified by treatment status
+    lr <- lm(
+      data = data %>% filter(public == d),
+      formula = f_mtr
+    )
+    # Now use coefficient estimates to estimate E[Y(d)]
+    data %>%
+      select(all_of(covlist)) %>%
+      mutate(fp = .5) %>%
+      summarize(across(everything(), mean)) -> df_mean
+    predict(lr, newdata = df_mean)
+  }) -> eyd
+  return(eyd[2] - eyd[1]) # Estimate of the ATE
+}
+
+mte_ate(gelbach) # point estimate matches that from ivmte
+sapply(seq_len(nbs), function(i) { # bootstrap by hand
+  idx <- sample(nrow(gelbach), nrow(gelbach), replace = TRUE)
+  dfbs <- gelbach[idx, ]
+  mte_ate(dfbs)
+}) %>%
+  sd() # standard error is similar
+```
+
+## Stata
+
+The `mtefe` module developed by @andresen2018tsj is an excellent implementation of MTE for Stata.
+It also has a large number of options and functionality that is well-explained in Andresen's _Stata Journal_ paper.
+It can be installed with `ssc install mtefe`.
+Here's how to reproduce the above estimates for the `R` code.
+
+```{stata mtefe, echo = FALSE}
+use gelbach.dta, replace
+local X ///
+  white num612 num1317 numge18 othrlt18 othrge18 grade centcity age age2
+
+mtefe work79 (public = i.quarter) `X', ///
+  polynomial(1) ///
+  separate ///
+  link(logit) ///
+  noplot ///
+  bootreps(10) // Make this larger in practice
+```
+
+# References
