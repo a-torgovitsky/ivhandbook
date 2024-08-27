@@ -643,6 +643,7 @@ covlist <- c(
   "age",
   "age2"
 )
+gelbach$quarter <- as_factor(gelbach$quarter)
 
 set.seed(393813)
 f_covlist <- paste(covlist, collapse = " + ")
