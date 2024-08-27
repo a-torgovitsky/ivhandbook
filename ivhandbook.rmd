@@ -400,7 +400,8 @@ net install ddml, ///
   from(https://raw.githubusercontent.com/aahrens1/ddml/master) ///
   replace
 ```
-You also need to install the `pystacked` module with `ssc install pystacked`, which needs to be able to find the Python module `scikit-learn` (e.g. `pip install scikit-learn`).
+You also need to install the `pystacked` module with `ssc install pystacked`.
+This in turns needs to be able to find the Python module `scikit-learn` (e.g. `pip install scikit-learn`).
 Details are given [here](https://statalasso.github.io/docs/python/).
 
 Once you've got everything running, the process of calling `ddml` is similar to `R`.
