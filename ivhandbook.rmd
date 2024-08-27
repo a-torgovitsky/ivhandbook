@@ -164,7 +164,7 @@ lrram <- lm(
 )
 linearHypothesis(lrram, c("yhat2", "yhat3"), white.adjust = "hc1", singular.ok = TRUE)
 ```
-Notice that both the test statistic and p-value match what we had above using `resettest` in the specification without the collinear indicator.
+Notice that both the test statistic and p-value match what we had above using `resettest` in the specification without the extra collinear indicator.
 The inclusion of the option `singular.ok = TRUE` is necessary or else `linearHypothesis` will also complain about multicollinearity.
 (I don't think there is a similar option that one can pass to `resettest`, which ultimately calls `waldtest.lm`.)
 Alternatively, it's not that hard to do all of this by hand either.
@@ -207,7 +207,7 @@ display "`r(F)'"
 // One might expect this to be different, but it's not
 qui reg `Z' `X', vce(robust)
 estat ovtest
-display "`r(F)'" // Same, even thought we used robust standard errors
+display "`r(F)'" // Same, even though we used robust standard errors
 
 // So to account for heteroskedasticity we can implement the test this way
 qui reg `Z' `X', vce(robust)
