@@ -278,6 +278,7 @@ div.tocify {
 <li>Estimate and aggregate the marginal treatment effect (MTE) curve for a binary treatment.</li>
 </ul>
 <p>The document contains code samples for both <code>R</code> and Stata. In each section, I’ll briefly describe the theoretical background in the context of the <code>R</code> code. Then I’ll go back and show the Stata equivalent.</p>
+<p>Any questions or problems, feel free to <a href="https://github.com/a-torgovitsky/ivhandbook/issues">post an issue</a>.</p>
 </div>
 <div id="packages-and-data" class="section level1" number="2">
 <h1><span class="header-section-number">2</span> Packages and data</h1>
@@ -295,7 +296,7 @@ library(&quot;purrr&quot;)</code></pre>
 </div>
 <div id="card-data" class="section level2" number="2.3">
 <h2><span class="header-section-number">2.3</span> Card data</h2>
-<p>The first three topics will be illustrated with the well-known <span class="citation">Card (1993)</span> <a href>(link)</a> extract of the NLSY79. Card used distance to a four-year college (<code>nearc4</code>) as an instrument for educational attainment (<code>educ</code>) to estimate the effect of education on wages (<code>lwage</code>, measured in logs), also commonly described as the returns to education. The treatment is multivalued and the instrument is binary.</p>
+<p>The first three topics will be illustrated with the well-known <span class="citation">Card (1993)</span> <a href="https://raw.githubusercontent.com/a-torgovitsky/ivhandbook/main/card.dta">(link)</a> extract of the NLSY79. Card used distance to a four-year college (<code>nearc4</code>) as an instrument for educational attainment (<code>educ</code>) to estimate the effect of education on wages (<code>lwage</code>, measured in logs), also commonly described as the returns to education. The treatment is multivalued and the instrument is binary.</p>
 <pre class="r"><code>card &lt;- haven::read_dta(&quot;card.dta&quot;)</code></pre>
 </div>
 </div>
@@ -1038,7 +1039,7 @@ ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
 </div>
 <div id="gelbach-data" class="section level2" number="6.2">
 <h2><span class="header-section-number">6.2</span> Gelbach data</h2>
-<p>We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by <span class="citation">Gelbach (2002)</span> <a href="url">(link)</a> that consists of single mothers whose youngest child was five years old in 1980. Gelbach used quarter of birth (<code>quarter</code>) as an instrument for public school enrollment (<code>public</code>) to estimate the effect of public school attendance on whether a mother worked (<code>work79</code> in the following). The treatment is binary and the instrument is multivalued.</p>
+<p>We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by <span class="citation">Gelbach (2002)</span> <a href="https://raw.githubusercontent.com/a-torgovitsky/ivhandbook/main/gelbach.dta">(link)</a> that consists of single mothers whose youngest child was five years old in 1980. Gelbach used quarter of birth (<code>quarter</code>) as an instrument for public school enrollment (<code>public</code>) to estimate the effect of public school attendance on whether a mother worked (<code>work79</code> in the following). The treatment is binary and the instrument is multivalued.</p>
 <pre class="r"><code>gelbach &lt;- haven::read_dta(&quot;gelbach.dta&quot;)</code></pre>
 </div>
 <div id="r-3" class="section level2" number="6.3">

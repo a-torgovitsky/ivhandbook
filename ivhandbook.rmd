@@ -63,7 +63,7 @@ I'll show you which ones when we get there.
 
 ## Card data
 
-The first three topics will be illustrated with the well-known @card1993wp [(link)](https://github.com/a-torgovitsky/ivhandbook/blob/753ca62e33f83345b7df7f189e10eea8feab694b/card.dta) extract of the NLSY79.
+The first three topics will be illustrated with the well-known @card1993wp [(link)](https://raw.githubusercontent.com/a-torgovitsky/ivhandbook/main/card.dta) extract of the NLSY79.
 Card used distance to a four-year college (`nearc4`) as an instrument for educational attainment (`educ`) to estimate the effect of education on wages (`lwage`, measured in logs), also commonly described as the returns to education.
 The treatment is multivalued and the instrument is binary.
 
@@ -616,7 +616,7 @@ Section 4.5 of the handbook chapter provides some details for a linear regressio
 
 ## Gelbach data
 
-We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by @gelbach2002taer [(link)](https://github.com/a-torgovitsky/ivhandbook/blob/753ca62e33f83345b7df7f189e10eea8feab694b/gelbach.dta)  that consists of single mothers whose youngest child was five years old in 1980.
+We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by @gelbach2002taer [(link)](https://raw.githubusercontent.com/a-torgovitsky/ivhandbook/main/gelbach.dta)  that consists of single mothers whose youngest child was five years old in 1980.
 Gelbach used quarter of birth (`quarter`) as an instrument for public school enrollment (`public`) to estimate the effect of public school attendance on whether a mother worked (`work79` in the following).
 The treatment is binary and the instrument is multivalued.
 
