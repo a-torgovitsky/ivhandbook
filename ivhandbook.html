@@ -402,7 +402,7 @@ linearHypothesis(lrram, c(&quot;yhat2&quot;, &quot;yhat3&quot;), white.adjust = 
 ## 2   2993  2 9.8868 5.252e-05 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
-<p>Notice that both the test statistic and p-value match what we had above using <code>resettest</code> in the specification without the collinear indicator. The inclusion of the option <code>singular.ok = TRUE</code> is necessary or else <code>linearHypothesis</code> will also complain about multicollinearity. (I don’t think there is a similar option that one can pass to <code>resettest</code>, which ultimately calls <code>waldtest.lm</code>.) Alternatively, it’s not that hard to do all of this by hand either.</p>
+<p>Notice that both the test statistic and p-value match what we had above using <code>resettest</code> in the specification without the extra collinear indicator. The inclusion of the option <code>singular.ok = TRUE</code> is necessary or else <code>linearHypothesis</code> will also complain about multicollinearity. (I don’t think there is a similar option that one can pass to <code>resettest</code>, which ultimately calls <code>waldtest.lm</code>.) Alternatively, it’s not that hard to do all of this by hand either.</p>
 <pre class="r"><code>yhats &lt;- c(&quot;yhat2&quot;, &quot;yhat3&quot;)
 bhat &lt;- lrram$coef[yhats]
 vc &lt;- vcovHC(lrram, type = &quot;HC1&quot;)[yhats, yhats]
@@ -463,7 +463,7 @@ pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above</code></pre>
 ## F(3, 2992) =   6.97
 ##   Prob &gt; F = 0.0001
 ## 
-## . display &quot;`r(F)&#39;&quot; // Same, even thought we used robust standard errors
+## . display &quot;`r(F)&#39;&quot; // Same, even though we used robust standard errors
 ## 6.971449756006162
 ## 
 ## . 
@@ -639,7 +639,7 @@ median(pliv$est) # Recommended point estimate</code></pre>
 <pre class="stata"><code>net install ddml, ///
   from(https://raw.githubusercontent.com/aahrens1/ddml/master) ///
   replace</code></pre>
-<p>You also need to install the <code>pystacked</code> module with <code>ssc install pystacked</code>, which needs to be able to find the Python module <code>scikit-learn</code> (e.g. <code>pip install scikit-learn</code>). Details are given <a href="https://statalasso.github.io/docs/python/">here</a>.</p>
+<p>You also need to install the <code>pystacked</code> module with <code>ssc install pystacked</code>. This in turns needs to be able to find the Python module <code>scikit-learn</code> (e.g. <code>pip install scikit-learn</code>). Details are given <a href="https://statalasso.github.io/docs/python/">here</a>.</p>
 <p>Once you’ve got everything running, the process of calling <code>ddml</code> is similar to <code>R</code>. Here’s sample code that tries to implement similar estimates to the ones for <code>R</code> above. The ML algorithms being called out to in the background are from different implementations (<code>scikit-learn</code> for Python instead of <code>ranger</code> and <code>xgboost</code> for <code>R</code>), which likely explains the small differences in results. I’ve tried to set the primary tuning parameters to be the same, but there are quite a few default ones, and some are probably slightly different. There are likely also small computational differences in how the algorithms are implemented.</p>
 <pre><code>## 
 ## . use card.dta, replace
@@ -1057,6 +1057,7 @@ covlist &lt;- c(
   &quot;age&quot;,
   &quot;age2&quot;
 )
+gelbach$quarter &lt;- as_factor(gelbach$quarter)
 
 set.seed(393813)
 f_covlist &lt;- paste(covlist, collapse = &quot; + &quot;)
@@ -1073,14 +1074,11 @@ args &lt;- list(
   point = TRUE,
   bootstraps = nbs
 )
-r &lt;- do.call(ivmte::ivmte, args)</code></pre>
-<pre><code>## Warning: None of the compatible solvers are installed, so estimation is only possible under point
-## identification. MTR coefficients will be estimated using OLS, and an estimate of the target parameter
-## will be returned only if the MTR coefficients are point identified.</code></pre>
-<pre class="r"><code>r$point.estimate</code></pre>
-<pre><code>## [1] 0.01494237</code></pre>
+r &lt;- do.call(ivmte::ivmte, args)
+r$point.estimate</code></pre>
+<pre><code>## [1] 0.02864251</code></pre>
 <pre class="r"><code>r$point.estimate.se</code></pre>
-<pre><code>## [1] 0.05404659</code></pre>
+<pre><code>## [1] 0.02307602</code></pre>
 <p>The <code>ivmte</code> package contains much more functionality; for full details, <a href="https://github.com/jkcshea/ivmte">see the repository</a> or <a href="https://muse.jhu.edu/pub/56/article/883476/pdf">the accompanying paper</a>. Here’s what it is doing under the hood in this simple example:</p>
 <pre class="r"><code># This function estimate the MTE and the implied ATE
 mte_ate &lt;- function(data) {
@@ -1111,14 +1109,14 @@ mte_ate &lt;- function(data) {
 
 mte_ate(gelbach) # point estimate matches that from ivmte</code></pre>
 <pre><code>##          1 
-## 0.01494237</code></pre>
+## 0.02864251</code></pre>
 <pre class="r"><code>sapply(seq_len(nbs), function(i) { # bootstrap by hand
   idx &lt;- sample(nrow(gelbach), nrow(gelbach), replace = TRUE)
   dfbs &lt;- gelbach[idx, ]
   mte_ate(dfbs)
 }) %&gt;%
   sd() # standard error is similar</code></pre>
-<pre><code>## [1] 0.05094001</code></pre>
+<pre><code>## [1] 0.0136221</code></pre>
 </div>
 <div id="stata-4" class="section level2" number="6.4">
 <h2><span class="header-section-number">6.4</span> Stata</h2>
@@ -1136,11 +1134,64 @@ mte_ate(gelbach) # point estimate matches that from ivmte</code></pre>
 ## &gt;   link(logit) ///
 ## &gt;   noplot ///
 ## &gt;   bootreps(10) // Make this larger in practice
-## command mtefe is unrecognized
-## r(199);
+## (running mtefe_secondstage on estimation sample)
 ## 
-## end of do-file
-## r(199);</code></pre>
+## Bootstrap replications (10): .........10 done
+## 
+## Parametric polynomial MTE model                         Number of obs = 10,932
+##                                                         Replications  =     10
+## 
+## 
+## Treatment model: Logit
+## Estimation method: Separate approach
+## ------------------------------------------------------------------------------
+##              |   Observed   Bootstrap                         Normal-based
+##       work79 | coefficient  std. err.      z    P&gt;|z|     [95% conf. interval]
+## -------------+----------------------------------------------------------------
+## beta0        |
+##        white |   .0344509   .0153112     2.25   0.024     .0044414    .0644603
+##       num612 |  -.0786369   .0084532    -9.30   0.000    -.0952048    -.062069
+##      num1317 |  -.0348928   .0085452    -4.08   0.000    -.0516411   -.0181445
+##      numge18 |  -.0401763   .0306649    -1.31   0.190    -.1002783    .0199257
+##     othrlt18 |  -.0505141   .0213663    -2.36   0.018    -.0923912    -.008637
+##     othrge18 |   .0415301   .0177038     2.35   0.019     .0068314    .0762289
+##        grade |     .03732   .0022416    16.65   0.000     .0329265    .0417135
+##     centcity |  -.1157907   .0174442    -6.64   0.000    -.1499806   -.0816008
+##          age |   .0453154   .0138904     3.26   0.001     .0180907    .0725401
+##         age2 |  -.0007179   .0002182    -3.29   0.001    -.0011456   -.0002903
+##        _cons |  -.3506762   .2142322    -1.64   0.102    -.7705636    .0692112
+## -------------+----------------------------------------------------------------
+## k0           |
+##          p01 |   .1020681   .0306876     3.33   0.001     .0419216    .1622147
+## -------------+----------------------------------------------------------------
+## beta1-beta0  |
+##        white |   .0077776   .0191604     0.41   0.685     -.029776    .0453312
+##       num612 |   .0069878   .0099224     0.70   0.481    -.0124598    .0264354
+##      num1317 |   .0039677   .0164701     0.24   0.810    -.0283131    .0362486
+##      numge18 |   .0560184    .040358     1.39   0.165    -.0230819    .1351186
+##     othrlt18 |   .0391709   .0258884     1.51   0.130    -.0115694    .0899113
+##     othrge18 |  -.0057665   .0173465    -0.33   0.740     -.039765     .028232
+##        grade |   .0053748   .0036421     1.48   0.140    -.0017636    .0125131
+##     centcity |   -.021134   .0241298    -0.88   0.381    -.0684275    .0261595
+##          age |  -.0068213   .0159143    -0.43   0.668    -.0380128    .0243701
+##         age2 |   .0000893   .0002469     0.36   0.717    -.0003945    .0005732
+##        _cons |    .078049   .2471243     0.32   0.752    -.4063057    .5624037
+## -------------+----------------------------------------------------------------
+## k            |
+##           p1 |   .1148366   .0713048     1.61   0.107    -.0249182    .2545914
+## -------------+----------------------------------------------------------------
+## effects      |
+##          ate |   .0286425    .014022     2.04   0.041     .0011599    .0561251
+##          att |   .0120965   .0117039     1.03   0.301    -.0108427    .0350357
+##         atut |   .0571107   .0293711     1.94   0.052    -.0004556    .1146771
+##         late |    .038809   .0180068     2.16   0.031     .0035164    .0741017
+##       mprte1 |   .0536539   .0265397     2.02   0.043     .0016371    .1056708
+##       mprte2 |   .0438562   .0211552     2.07   0.038     .0023927    .0853196
+##       mprte3 |   .0529657   .0262578     2.02   0.044     .0015013    .1044301
+## ------------------------------------------------------------------------------
+## Test of observable heterogeneity, p-value                               0.0000
+## Test of essential heterogeneity, p-value                                0.1073
+## ------------------------------------------------------------------------------</code></pre>
 </div>
 </div>
 <div id="references" class="section level1 unnumbered">
