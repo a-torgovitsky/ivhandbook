@@ -344,7 +344,7 @@ ivreg(
 ##   term  estimate std.error statistic  p.value
 ##   &lt;chr&gt;    &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
 ## 1 D        0.188    0.0261      7.19 7.92e-13</code></pre>
-<p>If there were no covariates, and given the usual monotonicity and full exogeneity conditions, then Card’s estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment. However, <span class="citation">Blandhol et al. (2022)</span> show that this interpretation generally breaks down when there are covariates. In particular, they show that unless the conditional mean of the instrument given the covariates is linear, the estimand cannot be interpreted as a “weakly causal” quantity that gives non-negative weight to all treatment effects. They describe the property that the conditional mean of the instrument is linear by saying that the linear IV specification has “rich covariates.”</p>
+<p>If there were no covariates, and if the usual monotonicity and full exogeneity conditions are satisfied, then Card’s estimate could be interpreted as estimating an average causal response (ACR), which is a generalization of the concept of a LATE from a binary treatment to a multivalued treatment. However, <span class="citation">Blandhol et al. (2022)</span> show that this interpretation generally breaks down when there are covariates. In particular, they show that unless the conditional mean of the instrument given the covariates is linear, the estimand cannot be interpreted as a “weakly causal” quantity that gives non-negative weight to all treatment effects. They describe the property that the conditional mean of the instrument is linear by saying that the linear IV specification has “rich covariates.”</p>
 <p>Rich covariates can be tested using a test of functional form for linear regression. The most well-known is the <span class="citation">Ramsey (1969)</span> RESET test, which is easy to implement. The <code>lmtest</code> package contains a built-in routine called <code>resettest</code>, which can be used as follows.</p>
 <pre class="r"><code>library(&quot;lmtest&quot;)
 library(&quot;car&quot;)
@@ -357,17 +357,23 @@ resettest(lr_zx, type = &quot;fitted&quot;, vcov = function(x) vcovHC(x, type = 
 ## 
 ## data:  lr_zx
 ## RESET = 9.8868, df1 = 2, df2 = 2995, p-value = 5.252e-05</code></pre>
-<p>The null hypothesis of rich covariates is overwhelmingly rejected here, implying that the linear IV estimand is not weakly causal.</p>
 </div>
-<div id="reset-and-multicollinearity-in-r" class="section level2" number="3.2">
-<h2><span class="header-section-number">3.2</span> RESET and multicollinearity in R</h2>
-<p>The <code>resettest</code> function doesn’t seem to be coded in a way that handles multicollinearity. For example, it throws an error about “aliased coefficients” if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix. (“Aliased coefficients” being another phrase for what economists would typically call perfect multicollinearity.) covs_flist_mc &lt;- paste(covs_flist, “+ reg667”) lr_zx &lt;- lm(data = card, formula = as.formula(paste(“Z ~”, covs_flist_mc))) lr_zx %&gt;% tidy() %&gt;% filter(is.na(estimate)) resettest(lr_zx, type = “fitted”, vcov = function(x) vcovHC(x, type = “HC1”)) filter(is.na(estimate)) resettest(lr_zx, type = “fitted”, vcov = function(x) vcovHC(x, type = “HC1”))</p>
-<pre><code>
-Having some multicollinearity is common in economic applications, which frequently include a variety of fixed effects as additional controls.
-Removing the collinear terms by hand can be tedious.
-So this drawback of `resettest` is a bit annoying.
-However, it&#39;s also easy to implement a RESET test yourself as a standard F-test using tools that are coded defensively enough to handle multicollinearity:
-card %&gt;%
+<div id="multicollinearity-in-r" class="section level2" number="3.2">
+<h2><span class="header-section-number">3.2</span> Multicollinearity in R</h2>
+<p>The <code>resettest</code> function doesn’t seem to be coded in a way that handles multicollinearity. For example, it throws an error about “aliased coefficients” if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix, although not in the homoskedastic case. (“Aliased coefficients” being another phrase for what economists would typically call perfect multicollinearity.)</p>
+<pre class="r"><code>covs_flist_mc &lt;- paste(covs_flist, &quot;+ reg667&quot;)
+lr_zx &lt;- lm(data = card, formula = as.formula(paste(&quot;Z ~ &quot;, covs_flist_mc)))
+lr_zx %&gt;%
+  tidy() %&gt;%
+  filter(is.na(estimate))</code></pre>
+<pre><code>## # A tibble: 1 × 5
+##   term   estimate std.error statistic p.value
+##   &lt;chr&gt;     &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;   &lt;dbl&gt;
+## 1 reg667       NA        NA        NA      NA</code></pre>
+<pre class="r"><code>resettest(lr_zx, type = &quot;fitted&quot;, vcov = function(x) vcovHC(x, type = &quot;HC1&quot;))</code></pre>
+<pre><code>## Error in waldtest.lm(lm(y ~ 0 + X + Z), &quot;Z&quot;, vcov = vcov, ...): there are aliased coefficients in the model</code></pre>
+<p>Having some multicollinearity is common in economic applications, which frequently include a variety of fixed effects as additional controls. Removing the collinear terms by hand can be tedious. So this drawback of <code>resettest</code> is a bit annoying. However, it’s also easy to implement a RESET test yourself as a standard F-test using tools that are coded defensively enough to handle multicollinearity:</p>
+<pre class="r"><code>card %&gt;%
   mutate(
     yhat = lr_zx$fitted.values,
     yhat2 = yhat^2,
@@ -377,265 +383,148 @@ lrram &lt;- lm(
   data = card,
   formula = as.formula(paste(&quot;Z ~ yhat2 + yhat3 + &quot;, covs_flist_mc))
 )
-linearHypothesis(lrram, c(&quot;yhat2&quot;, &quot;yhat3&quot;), white.adjust = &quot;hc1&quot;, singular.ok = TRUE)
-)
 linearHypothesis(lrram, c(&quot;yhat2&quot;, &quot;yhat3&quot;), white.adjust = &quot;hc1&quot;, singular.ok = TRUE)</code></pre>
-<p>Notice that both the test statistic and p-value match what we had above using <code>resettest</code> in the specification without the collinear indicator. The inclusion of the option <code>singular.ok = TRUE</code> is necessary or else <code>linearHypothesis</code> will also complain about multicollinearity. (I don’t think there is a similar option that one can pass to <code>resettest</code>, which ultimately calls <code>waldtest.lm</code>.) Alternatively, it’s not that hard to do all of this by hand either. yhats &lt;- c(“yhat2”, “yhat3”) bhat &lt;- lrram$coef[yhats] vc &lt;- vcovHC(lrram, type = “HC1”)[yhats, yhats] ts &lt;- t(bhat) %<em>% solve(vc) %</em>% bhat # Wald statistic pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above ts / 2 # F-statistic, matches abovet # Wald statistic pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above ts / 2 # F-statistic, matches above</p>
-<pre><code>
-However you do it, the conclusion from the RESET test in this case is an overwhelming rejection of the null hypothesis.
-The null hypothesis is equivalent to the statement that the specification has rich covariates, which in turn is necessary (and in many cases sufficient) for the IV estimate to have a weakly causal interpretation.
-So rejecting the null here means that there is strong statistical evidence that Card&#39;s estimate is not weakly causal; it is not a non-negatively weighted average of treatment effects.
-
-## Stata
-
-A RESET test can be implemented in Stata with the postestimation command `estat ovtest`.
-The documentation on `ovtest` is pretty sparse, as are the options.
-As far as I can tell, the Stata routine cannot be made robust to heteroskedasticity, nor can the powers of the fitted values used in the test be changed.
-Here&#39;s a demonstration of that, as well as code that allows you to implement the RESET test directly and get around these limitations.
-
-</code></pre>
-</div>
-<div id="section" class="section level2" number="3.3">
-<h2><span class="header-section-number">3.3</span> </h2>
-</div>
-<div id="use-card.dta-replace" class="section level2" number="3.4">
-<h2><span class="header-section-number">3.4</span> . use card.dta, replace</h2>
-</div>
-<div id="section-1" class="section level2" number="3.5">
-<h2><span class="header-section-number">3.5</span> </h2>
-</div>
-<div id="section-2" class="section level2" number="3.6">
-<h2><span class="header-section-number">3.6</span> .</h2>
-</div>
-<div id="local-y-lwage" class="section level2" number="3.7">
-<h2><span class="header-section-number">3.7</span> . local Y lwage</h2>
-</div>
-<div id="section-3" class="section level2" number="3.8">
-<h2><span class="header-section-number">3.8</span> </h2>
-</div>
-<div id="local-d-educ" class="section level2" number="3.9">
-<h2><span class="header-section-number">3.9</span> . local D educ</h2>
-</div>
-<div id="section-4" class="section level2" number="3.10">
-<h2><span class="header-section-number">3.10</span> </h2>
-</div>
-<div id="local-z-nearc4" class="section level2" number="3.11">
-<h2><span class="header-section-number">3.11</span> . local Z nearc4</h2>
-</div>
-<div id="section-5" class="section level2" number="3.12">
-<h2><span class="header-section-number">3.12</span> </h2>
-</div>
-<div id="local-x-south-smsa-smsa66" class="section level2" number="3.13">
-<h2><span class="header-section-number">3.13</span> . local X south smsa smsa66 ///</h2>
-</div>
-<div id="reg661-reg662-reg663-reg664-reg665-reg666-reg667-reg668-reg669" class="section level2" number="3.14">
-<h2><span class="header-section-number">3.14</span> &gt; reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///</h2>
-</div>
-<div id="black-exper-expersq" class="section level2" number="3.15">
-<h2><span class="header-section-number">3.15</span> &gt; black exper expersq</h2>
-</div>
-<div id="section-6" class="section level2" number="3.16">
-<h2><span class="header-section-number">3.16</span> </h2>
-</div>
-<div id="section-7" class="section level2" number="3.17">
-<h2><span class="header-section-number">3.17</span> .</h2>
-</div>
-<div id="use-statas-built-in" class="section level2" number="3.18">
-<h2><span class="header-section-number">3.18</span> . // Use Stata’s built-in</h2>
-</div>
-<div id="qui-reg-zx" class="section level2" number="3.19">
-<h2><span class="header-section-number">3.19</span> . qui reg <code>Z&#39;</code>X’</h2>
-</div>
-<div id="section-8" class="section level2" number="3.20">
-<h2><span class="header-section-number">3.20</span> </h2>
-</div>
-<div id="estat-ovtest" class="section level2" number="3.21">
-<h2><span class="header-section-number">3.21</span> . estat ovtest</h2>
-</div>
-<div id="section-9" class="section level2" number="3.22">
-<h2><span class="header-section-number">3.22</span> </h2>
-</div>
-<div id="ramsey-reset-test-for-omitted-variables" class="section level2" number="3.23">
-<h2><span class="header-section-number">3.23</span> Ramsey RESET test for omitted variables</h2>
-</div>
-<div id="omitted-powers-of-fitted-values-of-nearc4" class="section level2" number="3.24">
-<h2><span class="header-section-number">3.24</span> Omitted: Powers of fitted values of nearc4</h2>
-</div>
-<div id="section-10" class="section level2" number="3.25">
-<h2><span class="header-section-number">3.25</span> </h2>
-</div>
-<div id="h0-model-has-no-omitted-variables" class="section level2" number="3.26">
-<h2><span class="header-section-number">3.26</span> H0: Model has no omitted variables</h2>
-</div>
-<div id="section-11" class="section level2" number="3.27">
-<h2><span class="header-section-number">3.27</span> </h2>
-</div>
-<div id="f3-2992-6.97" class="section level2" number="3.28">
-<h2><span class="header-section-number">3.28</span> F(3, 2992) = 6.97</h2>
-</div>
-<div id="prob-f-0.0001" class="section level2" number="3.29">
-<h2><span class="header-section-number">3.29</span> Prob &gt; F = 0.0001</h2>
-</div>
-<div id="section-12" class="section level2" number="3.30">
-<h2><span class="header-section-number">3.30</span> </h2>
-</div>
-<div id="display-rf-6.971449756006162-.-.-one-might-expect-this-to-be-different-but-its-not-.-qui-regz-x-vcerobust-.-estat-ovtest-ramsey-reset-test-for-omitted-variables-omitted-powers-of-fitted-values-of-nearc4-h0-model-has-no-omitted-variables-f3-2992-6.97-prob-f-0.0001-.-display-rf-same-even-thought-we-used-robust-standard-errors" class="section level2" number="3.31">
-<h2><span class="header-section-number">3.31</span> . display “<code>r(F)&#39;&quot; ## 6.971449756006162 ##  ## .  ## . // One might expect this to be different, but it&#39;s not ## . qui reg</code>Z’ <code>X&#39;, vce(robust) ##  ## . estat ovtest ##  ## Ramsey RESET test for omitted variables ## Omitted: Powers of fitted values of nearc4 ##  ## H0: Model has no omitted variables ##  ## F(3, 2992) =   6.97 ##   Prob &gt; F = 0.0001 ##  ## . display &quot;</code>r(F)’” // Same, even thought we used robust standard errors</h2>
-</div>
-<div id="section-13" class="section level2" number="3.32">
-<h2><span class="header-section-number">3.32</span> 6.971449756006162</h2>
-</div>
-<div id="section-14" class="section level2" number="3.33">
-<h2><span class="header-section-number">3.33</span> </h2>
-</div>
-<div id="section-15" class="section level2" number="3.34">
-<h2><span class="header-section-number">3.34</span> .</h2>
-</div>
-<div id="so-to-account-for-heteroskedasticity-we-can-implement-the-test-this-way" class="section level2" number="3.35">
-<h2><span class="header-section-number">3.35</span> . // So to account for heteroskedasticity we can implement the test this way</h2>
-</div>
-<div id="qui-reg-zx-vcerobust" class="section level2" number="3.36">
-<h2><span class="header-section-number">3.36</span> . qui reg <code>Z&#39;</code>X’, vce(robust)</h2>
-</div>
-<div id="section-16" class="section level2" number="3.37">
-<h2><span class="header-section-number">3.37</span> </h2>
-</div>
-<div id="predict-yhat" class="section level2" number="3.38">
-<h2><span class="header-section-number">3.38</span> . predict yhat</h2>
-</div>
-<div id="option-xb-assumed-fitted-values" class="section level2" number="3.39">
-<h2><span class="header-section-number">3.39</span> (option xb assumed; fitted values)</h2>
-</div>
-<div id="section-17" class="section level2" number="3.40">
-<h2><span class="header-section-number">3.40</span> </h2>
-</div>
-<div id="gen-yhat2-yhat2" class="section level2" number="3.41">
-<h2><span class="header-section-number">3.41</span> . gen yhat2 = yhat^2</h2>
-</div>
-<div id="section-18" class="section level2" number="3.42">
-<h2><span class="header-section-number">3.42</span> </h2>
-</div>
-<div id="gen-yhat3-yhat3" class="section level2" number="3.43">
-<h2><span class="header-section-number">3.43</span> . gen yhat3 = yhat^3</h2>
-</div>
-<div id="section-19" class="section level2" number="3.44">
-<h2><span class="header-section-number">3.44</span> </h2>
-</div>
-<div id="qui-reg-zx-yhat2-yhat3-vcerobust" class="section level2" number="3.45">
-<h2><span class="header-section-number">3.45</span> . qui reg <code>Z&#39;</code>X’ yhat2 yhat3, vce(robust)</h2>
-</div>
-<div id="section-20" class="section level2" number="3.46">
-<h2><span class="header-section-number">3.46</span> </h2>
-</div>
-<div id="test-yhat2-yhat3-this-matches-the-results-from-r" class="section level2" number="3.47">
-<h2><span class="header-section-number">3.47</span> . test yhat2 yhat3 // This matches the results from R</h2>
-</div>
-<div id="section-21" class="section level2" number="3.48">
-<h2><span class="header-section-number">3.48</span> </h2>
-</div>
-<div id="yhat2-0" class="section level2" number="3.49">
-<h2><span class="header-section-number">3.49</span> ( 1) yhat2 = 0</h2>
-</div>
-<div id="yhat3-0" class="section level2" number="3.50">
-<h2><span class="header-section-number">3.50</span> ( 2) yhat3 = 0</h2>
-</div>
-<div id="section-22" class="section level2" number="3.51">
-<h2><span class="header-section-number">3.51</span> </h2>
-</div>
-<div id="f-2-2993-9.89" class="section level2" number="3.52">
-<h2><span class="header-section-number">3.52</span> F( 2, 2993) = 9.89</h2>
-</div>
-<div id="prob-f-0.0001-1" class="section level2" number="3.53">
-<h2><span class="header-section-number">3.53</span> Prob &gt; F = 0.0001</h2>
-</div>
-<div id="section-23" class="section level2" number="3.54">
-<h2><span class="header-section-number">3.54</span> </h2>
-</div>
-<div id="section-24" class="section level2" number="3.55">
-<h2><span class="header-section-number">3.55</span> .</h2>
-</div>
-<div id="heres-what-stata-is-doing-by-default" class="section level2" number="3.56">
-<h2><span class="header-section-number">3.56</span> . // Here’s what Stata is doing by default</h2>
-</div>
-<div id="gen-yhat4-yhat4" class="section level2" number="3.57">
-<h2><span class="header-section-number">3.57</span> . gen yhat4 = yhat^4</h2>
-</div>
-<div id="section-25" class="section level2" number="3.58">
-<h2><span class="header-section-number">3.58</span> </h2>
-</div>
-<div id="qui-reg-zx-yhat2-yhat3-yhat4" class="section level2" number="3.59">
-<h2><span class="header-section-number">3.59</span> . qui reg <code>Z&#39;</code>X’ yhat2 yhat3 yhat4</h2>
-</div>
-<div id="section-26" class="section level2" number="3.60">
-<h2><span class="header-section-number">3.60</span> </h2>
-</div>
-<div id="test-yhat2-yhat3-yhat4" class="section level2" number="3.61">
-<h2><span class="header-section-number">3.61</span> . test yhat2 yhat3 yhat4</h2>
-</div>
-<div id="section-27" class="section level2" number="3.62">
-<h2><span class="header-section-number">3.62</span> </h2>
-</div>
-<div id="yhat2-0-1" class="section level2" number="3.63">
-<h2><span class="header-section-number">3.63</span> ( 1) yhat2 = 0</h2>
-</div>
-<div id="yhat3-0-1" class="section level2" number="3.64">
-<h2><span class="header-section-number">3.64</span> ( 2) yhat3 = 0</h2>
-</div>
-<div id="yhat4-0" class="section level2" number="3.65">
-<h2><span class="header-section-number">3.65</span> ( 3) yhat4 = 0</h2>
-</div>
-<div id="section-28" class="section level2" number="3.66">
-<h2><span class="header-section-number">3.66</span> </h2>
-</div>
-<div id="f-3-2992-6.97" class="section level2" number="3.67">
-<h2><span class="header-section-number">3.67</span> F( 3, 2992) = 6.97</h2>
-</div>
-<div id="prob-f-0.0001-2" class="section level2" number="3.68">
-<h2><span class="header-section-number">3.68</span> Prob &gt; F = 0.0001</h2>
-</div>
-<div id="section-29" class="section level2" number="3.69">
-<h2><span class="header-section-number">3.69</span> </h2>
-</div>
-<div id="return-list-matches-the-homoskedastic-test" class="section level2" number="3.70">
-<h2><span class="header-section-number">3.70</span> . return list // Matches the homoskedastic test</h2>
-</div>
-<div id="section-30" class="section level2" number="3.71">
-<h2><span class="header-section-number">3.71</span> </h2>
-</div>
-<div id="scalars" class="section level2" number="3.72">
-<h2><span class="header-section-number">3.72</span> scalars:</h2>
-</div>
-<div id="rdrop-0" class="section level2" number="3.73">
-<h2><span class="header-section-number">3.73</span> r(drop) = 0</h2>
-</div>
-<div id="rdf_r-2992" class="section level2" number="3.74">
-<h2><span class="header-section-number">3.74</span> r(df_r) = 2992</h2>
-</div>
-<div id="rf-6.971424720166404" class="section level2" number="3.75">
-<h2><span class="header-section-number">3.75</span> r(F) = 6.971424720166404</h2>
-</div>
-<div id="rdf-3" class="section level2" number="3.76">
-<h2><span class="header-section-number">3.76</span> r(df) = 3</h2>
-</div>
-<div id="rp-.0001133744330715" class="section level2" number="3.77">
-<h2><span class="header-section-number">3.77</span> r(p) = .0001133744330715</h2>
-<pre><code>
-# Double/debiased machine learning
-
-## Motivation
-
-Using a nonparametric functional form for covariates is one way to address the problem of not having rich covariates.
-A low-tech nonparametric approach is to construct a saturated regression, in which there is one bin for each covariate value.
-These are the types of specifications that are assumed in @angristimbens1995jotasa and @angristpischke2009 to justify linear IV estimates as representing something that is weakly causal.
-But using such a specification in Card&#39;s application---as in many/most others---is not going to be feasible:
-card %&gt;%
+<pre><code>## Linear hypothesis test
+## 
+## Hypothesis:
+## yhat2 = 0
+## yhat3 = 0
+## 
+## Model 1: restricted model
+## Model 2: Z ~ yhat2 + yhat3 + south + south66 + smsa + smsa66 + reg661 + 
+##     reg662 + reg663 + reg664 + reg665 + reg666 + reg668 + black + 
+##     exper + expersq + reg667
+## 
+## Note: Coefficient covariance matrix supplied.
+## 
+##   Res.Df Df      F    Pr(&gt;F)    
+## 1   2995                        
+## 2   2993  2 9.8868 5.252e-05 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p>Notice that both the test statistic and p-value match what we had above using <code>resettest</code> in the specification without the collinear indicator. The inclusion of the option <code>singular.ok = TRUE</code> is necessary or else <code>linearHypothesis</code> will also complain about multicollinearity. (I don’t think there is a similar option that one can pass to <code>resettest</code>, which ultimately calls <code>waldtest.lm</code>.) Alternatively, it’s not that hard to do all of this by hand either.</p>
+<pre class="r"><code>yhats &lt;- c(&quot;yhat2&quot;, &quot;yhat3&quot;)
+bhat &lt;- lrram$coef[yhats]
+vc &lt;- vcovHC(lrram, type = &quot;HC1&quot;)[yhats, yhats]
+ts &lt;- t(bhat) %*% solve(vc) %*% bhat # Wald statistic
+pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above</code></pre>
+<pre><code>##             [,1]
+## [1,] 5.08394e-05</code></pre>
+<pre class="r"><code>ts / 2 # F-statistic, matches above</code></pre>
+<pre><code>##          [,1]
+## [1,] 9.886839</code></pre>
+<p>However you do it, the conclusion from the RESET test in this case is an overwhelming rejection of the null hypothesis. The null hypothesis is equivalent to the statement that the specification has rich covariates, which in turn is necessary (and in many cases sufficient) for the IV estimate to have a weakly causal interpretation. So rejecting the null here means that there is strong statistical evidence that Card’s estimate is not weakly causal; it is not a non-negatively weighted average of treatment effects.</p>
+</div>
+<div id="stata-1" class="section level2" number="3.3">
+<h2><span class="header-section-number">3.3</span> Stata</h2>
+<p>A RESET test can be implemented in Stata with the postestimation command <code>estat ovtest</code>. The documentation on <code>ovtest</code> is pretty sparse, as are the options. As far as I can tell, the Stata routine cannot be made robust to heteroskedasticity, nor can the powers of the fitted values used in the test be changed. Here’s a demonstration of that, as well as code that allows you to implement the RESET test directly and get around these limitations.</p>
+<pre><code>## 
+## . use card.dta, replace
+## 
+## . 
+## . local Y lwage
+## 
+## . local D educ
+## 
+## . local Z nearc4
+## 
+## . local X south smsa smsa66 ///
+## &gt;   reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+## &gt;   black exper expersq
+## 
+## . 
+## . // Use Stata&#39;s built-in
+## . qui reg `Z&#39; `X&#39;
+## 
+## . estat ovtest
+## 
+## Ramsey RESET test for omitted variables
+## Omitted: Powers of fitted values of nearc4
+## 
+## H0: Model has no omitted variables
+## 
+## F(3, 2992) =   6.97
+##   Prob &gt; F = 0.0001
+## 
+## . display &quot;`r(F)&#39;&quot;
+## 6.971449756006162
+## 
+## . 
+## . // One might expect this to be different, but it&#39;s not
+## . qui reg `Z&#39; `X&#39;, vce(robust)
+## 
+## . estat ovtest
+## 
+## Ramsey RESET test for omitted variables
+## Omitted: Powers of fitted values of nearc4
+## 
+## H0: Model has no omitted variables
+## 
+## F(3, 2992) =   6.97
+##   Prob &gt; F = 0.0001
+## 
+## . display &quot;`r(F)&#39;&quot; // Same, even thought we used robust standard errors
+## 6.971449756006162
+## 
+## . 
+## . // So to account for heteroskedasticity we can implement the test this way
+## . qui reg `Z&#39; `X&#39;, vce(robust)
+## 
+## . predict yhat
+## (option xb assumed; fitted values)
+## 
+## . gen yhat2 = yhat^2
+## 
+## . gen yhat3 = yhat^3
+## 
+## . qui reg `Z&#39; `X&#39; yhat2 yhat3, vce(robust)
+## 
+## . test yhat2 yhat3 // This matches the results from R
+## 
+##  ( 1)  yhat2 = 0
+##  ( 2)  yhat3 = 0
+## 
+##        F(  2,  2993) =    9.89
+##             Prob &gt; F =    0.0001
+## 
+## . 
+## . // Here&#39;s what Stata is doing by default
+## . gen yhat4 = yhat^4
+## 
+## . qui reg `Z&#39; `X&#39; yhat2 yhat3 yhat4
+## 
+## . test yhat2 yhat3 yhat4
+## 
+##  ( 1)  yhat2 = 0
+##  ( 2)  yhat3 = 0
+##  ( 3)  yhat4 = 0
+## 
+##        F(  3,  2992) =    6.97
+##             Prob &gt; F =    0.0001
+## 
+## . return list // Matches the homoskedastic test
+## 
+## scalars:
+##                r(drop) =  0
+##                r(df_r) =  2992
+##                   r(F) =  6.971424720166404
+##                  r(df) =  3
+##                   r(p) =  .0001133744330715</code></pre>
+</div>
+</div>
+<div id="doubledebiased-machine-learning" class="section level1" number="4">
+<h1><span class="header-section-number">4</span> Double/debiased machine learning</h1>
+<div id="motivation" class="section level2" number="4.1">
+<h2><span class="header-section-number">4.1</span> Motivation</h2>
+<p>Using a nonparametric functional form for covariates is one way to address the problem of not having rich covariates. A low-tech nonparametric approach is to construct a saturated regression, in which there is one bin for each covariate value. These are the types of specifications that are assumed in <span class="citation">Angrist and Imbens (1995)</span> and <span class="citation">Angrist and Pischke (2009)</span> to justify linear IV estimates as representing something that is weakly causal. But using such a specification in Card’s application—as in many/most others—is not going to be feasible:</p>
+<pre class="r"><code>card %&gt;%
   select(all_of(covs)) %&gt;%
   summarize(across(everything(), ~ n_distinct(.))) %&gt;%
   as.matrix() %&gt;%
-  prod()
-nrow(card)x() %&gt;%
-  prod()
-nrow(card)</code></pre>
+  prod()</code></pre>
+<pre><code>## [1] 2359296</code></pre>
+<pre class="r"><code>nrow(card)</code></pre>
+<pre><code>## [1] 3010</code></pre>
 <p>A saturated regression in Card’s case would have over 2.3 million regressors for only about 3,000 observations!</p>
 <p>More sophisticated nonparametric methods can get around this limitation by engaging in some data-driven model selection. A particularly attractive approach for the current problem are the double/debiased machine learning (DDML) estimators discussed by <span class="citation">Chernozhukov et al. (2018)</span>. These estimators make use of two techniques to estimate a version of the linear IV model that controls for covariates in an unknown way. The first is a reformulation of the implicit moment condition in linear IV into a new “orthogonalized” moment condition that incorporates the idea from the “doubly-robust” literature that the product of two small quantities is an even smaller quantity. This allows for nonparametric estimators that are more flexible, and hence converge at slower rates, because the product of two slowly-converging quantities can converge at the usual parametric rate. The second element of the DDML estimator is cross-fitting, which is used to defend against overfitting similar to the way that sample splitting would, but without the attendant loss of data.</p>
 <p>In the following, I’ll demonstrate the use of the <code>ddml</code> package for <code>R</code> <span class="citation">Ahrens et al. (2024b)</span>. An alternative is the <code>DoubleML</code> package <span class="citation">Bach et al. (2024)</span>. The attractions of <code>ddml</code> are that the learning curve is a bit flatter, there is a closely-related Stata module, which I’ll demonstrate below, and that it allows for a technique called short-stacking <span class="citation">(Ahrens et al. 2024a)</span>. Stacking is a technique that combines an ensemble of different ML algorithms together and then chooses a convex-weighted average of the result based on which ones perform the best in out-of-sample prediction. Short-stacking is a computationally attractive modification, so called because it takes a computational short-cut when determining the weights.</p>
@@ -646,22 +535,41 @@ nrow(card)</code></pre>
 <li>Short-stacking means we can combine multiple ML algorithms together. As <span class="citation">Ahrens et al. (2023)</span> demonstrate, individual ML algorithms can perform poorly. Combining multiple ML algorithms together through stacking limits the risk that a poor algorithm exerts much influence on the final estimate.</li>
 </ol>
 </div>
-<div id="r-1" class="section level2" number="3.78">
-<h2><span class="header-section-number">3.78</span> R</h2>
+<div id="r-1" class="section level2" number="4.2">
+<h2><span class="header-section-number">4.2</span> R</h2>
 <p>The main step in using DDML is defining the ML algorithms. This is done with a list of lists. Each list in the list of lists has two components: (i) the name of the function used to call the algorithm and (ii) the additional arguments passed to the function. For the former, <code>ddml</code> includes wrappers to <code>ranger</code> and <code>xgboost</code>, which are popular packages for random forests and gradient-boosted trees, respectively. One can also define additional wrappers; see <a href="https://github.com/a-torgovitsky/ivhandbookReplication/blob/faa0c23335acafc39268386dca6cde64ab82ecee/R/card-ddml.R#L1C1-L73C2">this bit of code</a> in the replication repository for an example using neural networks from the <code>nnet</code> package. The second argument to each list is a set of tuning parameters. It can be difficult to know how to set these a priori, so it’s reasonable to view the same algorithm with different tuning parameters as a separate ML algorithm.</p>
-<p>Here’s an example with six algorithms consisting of three random forests and three gradient-boosted trees: library(“ddml”)</p>
-<p>learners &lt;- list( list( fun = ddml::mdl_xgboost, args = list(max_depth = 2) ), list( fun = ddml::mdl_xgboost, args = list(eta = .01) ), list( fun = ddml::mdl_xgboost, args = list(eta = .05, max_depth = 3) ), list( fun = ddml::mdl_ranger, args = list() ), list( fun = ddml::mdl_ranger, args = list(max.depth = 4) ), list( fun = ddml::mdl_ranger, args = list(max.depth = 3, mtry = 5) ) ) args = list(max.depth = 3, mtry = 5) ) )</p>
-<pre><code>
-How did I choose these tuning parameters?
-Almost completely at random!
-I have a sense of which ones are thought to be important based on my pedestrian understanding of how the algorithms work (at the level of say @hastietibshiranifriedman2009).
-Then I just tried a few values different than the default.
-This is one of the drawbacks of using an ML approach: even though model selection is completely data-driven, the analyst still has a large number of choices to make in how the model selection is implemented and the computational cost of exploring them thoroughly is high.
-Short-stacking will hopefully help save us from making bad choices.
+<p>Here’s an example with six algorithms consisting of three random forests and three gradient-boosted trees:</p>
+<pre class="r"><code>library(&quot;ddml&quot;)
 
-Now that we have these learners defined, we can call `ddml` with short-stacking.
-The specific DDML estimator we want in for this case is `ddml_pliv` for &quot;partially linear IV.&quot;
-Y &lt;- as.matrix(card$Y)
+learners &lt;- list(
+  list(
+    fun = ddml::mdl_xgboost,
+    args = list(max_depth = 2)
+  ),
+  list(
+    fun = ddml::mdl_xgboost,
+    args = list(eta = .01)
+  ),
+  list(
+    fun = ddml::mdl_xgboost,
+    args = list(eta = .05, max_depth = 3)
+  ),
+  list(
+    fun = ddml::mdl_ranger,
+    args = list()
+  ),
+  list(
+    fun = ddml::mdl_ranger,
+    args = list(max.depth = 4)
+  ),
+  list(
+    fun = ddml::mdl_ranger,
+    args = list(max.depth = 3, mtry = 5)
+  )
+)</code></pre>
+<p>How did I choose these tuning parameters? Almost completely at random! I have a sense of which ones are thought to be important based on my pedestrian understanding of how the algorithms work (at the level of say <span class="citation">Hastie, Tibshirani, and Friedman (2009)</span>). Then I just tried a few values different than the default. This is one of the drawbacks of using an ML approach: even though model selection is completely data-driven, the analyst still has a large number of choices to make in how the model selection is implemented and the computational cost of exploring them thoroughly is high. Short-stacking will hopefully help save us from making bad choices.</p>
+<p>Now that we have these learners defined, we can call <code>ddml</code> with short-stacking. The specific DDML estimator we want in for this case is <code>ddml_pliv</code> for “partially linear IV.”</p>
+<pre class="r"><code>Y &lt;- as.matrix(card$Y)
 D &lt;- as.matrix(card$D)
 Z &lt;- as.matrix(card$Z)
 X &lt;- as.matrix(card[, covs])
@@ -677,15 +585,15 @@ args &lt;- list(
   custom_ensemble_weights = diag(length(learners)) # Useful for diagnostics
 )
 set.seed(52)
-result &lt;- do.call(ddml_pliv, args)
-set.seed(52)
 result &lt;- do.call(ddml_pliv, args)</code></pre>
-<p>The <code>result</code> object contains quite a bit of information useful for diagnostics. If you just want the point estimate and standard error, they can be obtained like this: s &lt;- summary(result) s[“D_r”, “Estimate”, “nnls1”] # point estimate s[“D_r”, “Std. Error”, “nnls1”] # standard error s[“D_r”, “Estimate”, “nnls1”] # point estimate s[“D_r”, “Std. Error”, “nnls1”] # standard error</p>
-<pre><code>Because we set `custom_ensemble_weights` equal to an identity matrix, we can also recover the point estimates and standard errors associated with each individual learner:
-t(s[&quot;D_r&quot;, c(&quot;Estimate&quot;, &quot;Std. Error&quot;), ])
-
-``` r
-t(s[&quot;D_r&quot;, c(&quot;Estimate&quot;, &quot;Std. Error&quot;), ])</code></pre>
+<p>The <code>result</code> object contains quite a bit of information useful for diagnostics. If you just want the point estimate and standard error, they can be obtained like this:</p>
+<pre class="r"><code>s &lt;- summary(result)
+s[&quot;D_r&quot;, &quot;Estimate&quot;, &quot;nnls1&quot;] # point estimate</code></pre>
+<pre><code>## [1] 0.1364128</code></pre>
+<pre class="r"><code>s[&quot;D_r&quot;, &quot;Std. Error&quot;, &quot;nnls1&quot;] # standard error</code></pre>
+<pre><code>## [1] 0.05371138</code></pre>
+<p>Because we set <code>custom_ensemble_weights</code> equal to an identity matrix, we can also recover the point estimates and standard errors associated with each individual learner:</p>
+<pre class="r"><code>t(s[&quot;D_r&quot;, c(&quot;Estimate&quot;, &quot;Std. Error&quot;), ])</code></pre>
 <pre><code>##           Estimate Std. Error
 ## nnls1    0.1364128 0.05371138
 ## custom_1 0.1432309 0.05352455
@@ -694,32 +602,41 @@ t(s[&quot;D_r&quot;, c(&quot;Estimate&quot;, &quot;Std. Error&quot;), ])</code><
 ## custom_4 0.1408755 0.05447024
 ## custom_5 0.1292378 0.05546726
 ## custom_6 0.1217142 0.05125895</code></pre>
-<p>Not all of the learners get weighted equally in the <code>nnls1</code> estimate. You can get the weights that go into each function that is estimated nonparametrically by looking at <code>result$weights</code>: result$weights %&gt;% map_dfr(~ .x[, “nnls1”], .id = “component”) %&gt;% round(digits = 3) map_dfr(~ .x[, “nnls1”], .id = “component”) %&gt;% round(digits = 3)</p>
-<pre><code>
-So all of the algorithms are doing a bit of work here except for the fifth one.
-
-Finally, remember that there is some randomness in these estimates due to the cross-fitting.
-So it&#39;s good practice to replicate the procedure multiple times and account for the variance across replications when reporting standard errors.
-The `ddml` package doesn&#39;t have built-in functionality for this, but it&#39;s easy enough to make your own loop.
-Here I&#39;ll loop ten times, but in practice you probably want to be a bit more thorough.
-pliv_list &lt;- lapply(seq_len(10), function(i) do.call(ddml_pliv, args))
-
-``` r
-pliv_list &lt;- lapply(seq_len(10), function(i) do.call(ddml_pliv, args))</code></pre>
-<p><span class="citation">Chernozhukov et al. (2018)</span> recommend reporting the median with the standard errors adjusted as follows to account for randomness across replications. lapply(pliv_list, function(r) { s &lt;- summary(r) tibble( est = s[“D_r”, “Estimate”, “nnls1”], se = s[“D_r”, “Std. Error”, “nnls1”] ) }) %&gt;% bind_rows() -&gt; pliv median(pliv<span class="math inline">\(est) # Recommended point estimate sqrt(median(pliv\)</span>se^2 + (pliv<span class="math inline">\(est - median(pliv\)</span>est))^2)) # Recommended SE median(pliv<span class="math inline">\(est) # Recommended point estimate sqrt(median(pliv\)</span>se^2 + (pliv<span class="math inline">\(est - median(pliv\)</span>est))^2)) # Recommended SE</p>
-<pre><code>In terms of the theory for heterogeneous treatment effects, this final estimate of 0.128 is one that can be said to be weakly causal with only nonparametric justification.
-Notice that it&#39;s not much different than the original linear IV estimate in this case, but that doesn&#39;t mean that the original linear IV estimate was somehow &quot;correct.&quot;
-Whether an estimand is weakly causal is about it&#39;s underlying interpretation in terms of treatment effects.
-A non-negatively weighted estimand can be equal to a negatively-weighted one, but that doesn&#39;t mean that they should be equally preferred.
-
-## Stata
-
-The Stata package is also called `ddml`.
-It can be installed with `ssc install ddml`, but as of this writing that version is outdated, and it seems that some of the syntax has changed relative to what I show below.
-Install the more recent version this way instead:
-
-``` stata
-net install ddml, ///
+<p>Not all of the learners get weighted equally in the <code>nnls1</code> estimate. You can get the weights that go into each function that is estimated nonparametrically by looking at <code>result$weights</code>:</p>
+<pre class="r"><code>result$weights %&gt;%
+  map_dfr(~ .x[, &quot;nnls1&quot;], .id = &quot;component&quot;) %&gt;%
+  round(digits = 3)</code></pre>
+<pre><code>## # A tibble: 6 × 3
+##     y_X  D1_X  Z1_X
+##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;
+## 1 0     0.095 0.187
+## 2 0.147 0.256 0.087
+## 3 0.355 0.555 0    
+## 4 0     0     0.491
+## 5 0.005 0     0    
+## 6 0.493 0.094 0.235</code></pre>
+<p>So all of the algorithms are doing a bit of work here except for the fifth one.</p>
+<p>Finally, remember that there is some randomness in these estimates due to the cross-fitting. So it’s good practice to replicate the procedure multiple times and account for the variance across replications when reporting standard errors. The <code>ddml</code> package doesn’t have built-in functionality for this, but it’s easy enough to make your own loop. Here I’ll loop ten times, but in practice you probably want to be a bit more thorough.</p>
+<pre class="r"><code>pliv_list &lt;- lapply(seq_len(10), function(i) do.call(ddml_pliv, args))</code></pre>
+<p><span class="citation">Chernozhukov et al. (2018)</span> recommend reporting the median with the standard errors adjusted as follows to account for randomness across replications.</p>
+<pre class="r"><code>lapply(pliv_list, function(r) {
+  s &lt;- summary(r)
+  tibble(
+    est = s[&quot;D_r&quot;, &quot;Estimate&quot;, &quot;nnls1&quot;],
+    se = s[&quot;D_r&quot;, &quot;Std. Error&quot;, &quot;nnls1&quot;]
+  )
+}) %&gt;%
+  bind_rows() -&gt; pliv
+median(pliv$est) # Recommended point estimate</code></pre>
+<pre><code>## [1] 0.1283299</code></pre>
+<pre class="r"><code>sqrt(median(pliv$se^2 + (pliv$est - median(pliv$est))^2)) # Recommended SE</code></pre>
+<pre><code>## [1] 0.05201638</code></pre>
+<p>In terms of the theory for heterogeneous treatment effects, this final estimate of 0.128 is one that can be said to be weakly causal with only nonparametric justification. Notice that it’s not much different than the original linear IV estimate in this case, but that doesn’t mean that the original linear IV estimate was somehow “correct.” Whether an estimand is weakly causal is about it’s underlying interpretation in terms of treatment effects. A non-negatively weighted estimand can be equal to a negatively-weighted one, but that doesn’t mean that they should be equally preferred.</p>
+</div>
+<div id="stata-2" class="section level2" number="4.3">
+<h2><span class="header-section-number">4.3</span> Stata</h2>
+<p>The Stata package is also called <code>ddml</code>. It can be installed with <code>ssc install ddml</code>, but as of this writing that version is outdated, and it seems that some of the syntax has changed relative to what I show below. Install the more recent version this way instead:</p>
+<pre class="stata"><code>net install ddml, ///
   from(https://raw.githubusercontent.com/aahrens1/ddml/master) ///
   replace</code></pre>
 <p>You also need to install the <code>pystacked</code> module with <code>ssc install pystacked</code>, which needs to be able to find the Python module <code>scikit-learn</code> (e.g. <code>pip install scikit-learn</code>). Details are given <a href="https://statalasso.github.io/docs/python/">here</a>.</p>
@@ -866,38 +783,34 @@ net install ddml, ///
 <p>The result ends up being similar to that found in <code>R</code> despite the small differences in implementation.</p>
 </div>
 </div>
-<div id="estimating-unconditional-lates-and-acrs" class="section level1" number="4">
-<h1><span class="header-section-number">4</span> Estimating unconditional LATEs and ACRs</h1>
-<div id="motivation" class="section level2" number="4.1">
-<h2><span class="header-section-number">4.1</span> Motivation</h2>
+<div id="estimating-unconditional-lates-and-acrs" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> Estimating unconditional LATEs and ACRs</h1>
+<div id="motivation-1" class="section level2" number="5.1">
+<h2><span class="header-section-number">5.1</span> Motivation</h2>
 <p>The DDML PLIV estimate is weakly causal, which means that it is a non-negatively weighted average of ACRs for each covariate bin. The weights depend on the amount of treatment variation that the instrument induces in each covariate bin. The overall weighted average is difficult to interpret because it represents treatment effects for many different subpopulations all averaged together in ways that reflect more than just their proportion of the population. An easier quantity to interpret is the unconditional ACR, which is what one would be estimating if covariates were not needed to justify the instrument.</p>
 </div>
-<div id="r-2" class="section level2" number="4.2">
-<h2><span class="header-section-number">4.2</span> R</h2>
+<div id="r-2" class="section level2" number="5.2">
+<h2><span class="header-section-number">5.2</span> R</h2>
 <p>There are a few ways to estimate an unconditional ACR. I’ll focus on two that I think are relatively easy to implement.</p>
-<p>The first is a different DDML estimator. The details are basically the same as in the previous section, except that the estimand is different and there are more unknown functions that need to be estimated nonparametrically. The syntax changes in only minor ways from the previous section. acr_list &lt;- lapply(seq_len(10), function(i) do.call(ddml_late, args))</p>
+<p>The first is a different DDML estimator. The details are basically the same as in the previous section, except that the estimand is different and there are more unknown functions that need to be estimated nonparametrically. The syntax changes in only minor ways from the previous section.</p>
 <pre class="r"><code>acr_list &lt;- lapply(seq_len(10), function(i) do.call(ddml_late, args))</code></pre>
-<p>Note that you’ll get a fair number of warnings about trimming here that can be ignored unless there are a very large number. (I’ve suppressed them in the output). lapply(acr_list, function(r) { s &lt;- summary(r) tibble( est = s[“nnls1”, “Estimate”], se = s[“nnls1”, “Std. Error”] ) }) %&gt;% bind_rows() -&gt; acr median(acr<span class="math inline">\(est) # Point estimate sqrt(median(acr\)</span>se^2 + (acr<span class="math inline">\(est - median(acr\)</span>est))^2)) # SE median(acr<span class="math inline">\(est) # Point estimate sqrt(median(acr\)</span>se^2 + (acr<span class="math inline">\(est - median(acr\)</span>est))^2)) # SE</p>
-<pre><code>
-Notice that this estimate is quite a bit different from both the linear IV and PLIV estimates, while having a similar standard error.
-The way in which the treatment effects are weighted across covariate groups evidently matters quite a bit here.
-
-An alternative way to estimate the ACR is with an instrument propensity score weighting (IPSW) approach due to @tan2006jasa and @frolich2007joe.
-@sloczynskiuysalwooldridge2024job&amp;es propose a weight-normalized version of this estimator, arguing that the weight normalization is important for giving the estimator sensible invariance properties and consequently also for its statistical stability.
-The derivation of the estimator is exposited in Section 4.2.1 of our handbook chapter, but the short story is that it can be viewed as a ratio of two propensity score weighting estimators of the average treatment effect.
-In the numerator is the average treatment effect of the instrument on the outcome, which can be seen as a nonparametric counterpart to the usual reduced form.
-In the denominator is the average treatment effect of the instrument on the treatment, which can be seen as a nonparametric counterpart to the usual first stage.
-Both averages are taken across covariates.
-The ratio can be shown to be equal to the unconditional LATE when the treatment is binary or the unconditional ACR when the treatment is ordered.
-Note that a binary instrument remains important here.
-
-I&#39;m not aware of packages that implement this procedure in `R`, but it&#39;s easy to implement by hand.
-First, we estimate the propensity score, which in context means the _instrument_ propensity score, that is, the probability that the binary instrument is one given the covariates.
-I&#39;ll do this with a logit model.
-Then, we use the fitted values from the logit model to constructed two weighted averages of the outcome and two weighted averages of the treatment.
-The ratio of the differences in these two weighted outcomes becomes the estimate of the LATE.
-Here&#39;s the procedure as a function:
-# IPSW = instrument propensity score weighting
+<p>Note that you’ll get a fair number of warnings about trimming here that can be ignored unless there are a very large number. (I’ve suppressed them in the output).</p>
+<pre class="r"><code>lapply(acr_list, function(r) {
+  s &lt;- summary(r)
+  tibble(
+    est = s[&quot;nnls1&quot;, &quot;Estimate&quot;],
+    se = s[&quot;nnls1&quot;, &quot;Std. Error&quot;]
+  )
+}) %&gt;%
+  bind_rows() -&gt; acr
+median(acr$est) # Point estimate</code></pre>
+<pre><code>## [1] 0.07659872</code></pre>
+<pre class="r"><code>sqrt(median(acr$se^2 + (acr$est - median(acr$est))^2)) # SE</code></pre>
+<pre><code>## [1] 0.05541654</code></pre>
+<p>Notice that this estimate is quite a bit different from both the linear IV and PLIV estimates, while having a similar standard error. The way in which the treatment effects are weighted across covariate groups evidently matters quite a bit here.</p>
+<p>An alternative way to estimate the ACR is with an instrument propensity score weighting (IPSW) approach due to <span class="citation">Tan (2006)</span> and <span class="citation">Frölich (2007)</span>. <span class="citation">Słoczyński, Uysal, and Wooldridge (2024)</span> propose a weight-normalized version of this estimator, arguing that the weight normalization is important for giving the estimator sensible invariance properties and consequently also for its statistical stability. The derivation of the estimator is exposited in Section 4.2.1 of our handbook chapter, but the short story is that it can be viewed as a ratio of two propensity score weighting estimators of the average treatment effect. In the numerator is the average treatment effect of the instrument on the outcome, which can be seen as a nonparametric counterpart to the usual reduced form. In the denominator is the average treatment effect of the instrument on the treatment, which can be seen as a nonparametric counterpart to the usual first stage. Both averages are taken across covariates. The ratio can be shown to be equal to the unconditional LATE when the treatment is binary or the unconditional ACR when the treatment is ordered. Note that a binary instrument remains important here.</p>
+<p>I’m not aware of packages that implement this procedure in <code>R</code>, but it’s easy to implement by hand. First, we estimate the propensity score, which in context means the <em>instrument</em> propensity score, that is, the probability that the binary instrument is one given the covariates. I’ll do this with a logit model. Then, we use the fitted values from the logit model to constructed two weighted averages of the outcome and two weighted averages of the treatment. The ratio of the differences in these two weighted outcomes becomes the estimate of the LATE. Here’s the procedure as a function:</p>
+<pre class="r"><code># IPSW = instrument propensity score weighting
 ipsw &lt;- function(data, f) {
   logit &lt;- glm(data = data, f = f, family = binomial)
   data %&gt;%
@@ -915,614 +828,261 @@ ipsw &lt;- function(data, f) {
   den &lt;- (x$den1 / x$W1 - x$den0 / x$W0)
   num / den
 }
-ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))
-}
 ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
-<p><span class="citation">Słoczyński, Uysal, and Wooldridge (2024)</span> provide analytic standard error formulas, but they are quite complicated. Bootstrapping the standard errors is a reasonable alternative. sapply(seq_len(500), function(i) { idx &lt;- sample(nrow(card), nrow(card), replace = TRUE) cardbs &lt;- card[idx, ] ipsw(cardbs, paste(“Z ~”, covs_flist)) }) %&gt;% sd()(cardbs, paste(“Z ~”, covs_flist)) }) %&gt;% sd()</p>
-<pre><code>
-This estimate is similar to the DDML ACR estimate with a similar standard error.
-It relies on the parametric assumption that we&#39;ve correctly specified the probability of the instrument given the covariates as a logit.
-The DDML estimate by contrast is arguably fully nonparametric (given sufficiently expressive ML algorithms), but requires estimating a number of functions.
-Depending on your faith in nonparametrics, you might like this more or less.
-Regardless, the fact that both estimates are considerably different from the PLIV estimate should give pause to the idea that all non-negatively weighted averages are equally valuable.
+<pre><code>## [1] 0.07293566</code></pre>
+<p><span class="citation">Słoczyński, Uysal, and Wooldridge (2024)</span> provide analytic standard error formulas, but they are quite complicated. Bootstrapping the standard errors is a reasonable alternative.</p>
+<pre class="r"><code>sapply(seq_len(500), function(i) {
+  idx &lt;- sample(nrow(card), nrow(card), replace = TRUE)
+  cardbs &lt;- card[idx, ]
+  ipsw(cardbs, paste(&quot;Z ~ &quot;, covs_flist))
+}) %&gt;%
+  sd()</code></pre>
+<pre><code>## [1] 0.04412163</code></pre>
+<p>This estimate is similar to the DDML ACR estimate with a similar standard error. It relies on the parametric assumption that we’ve correctly specified the probability of the instrument given the covariates as a logit. The DDML estimate by contrast is arguably fully nonparametric (given sufficiently expressive ML algorithms), but requires estimating a number of functions. Depending on your faith in nonparametrics, you might like this more or less. Regardless, the fact that both estimates are considerably different from the PLIV estimate should give pause to the idea that all non-negatively weighted averages are equally valuable.</p>
+</div>
+<div id="stata-3" class="section level2" number="5.3">
+<h2><span class="header-section-number">5.3</span> Stata</h2>
+<p>It is unfortunately not possible to implement the DDML estimates in Stata at current using the <code>ddml</code> package, because the authors require the treatment to be binary in their error-checking. I expect this is because it’s not widely appreciated that the same approach estimates an unconditional ACR for multivalued treatments. Hopefully the authors will fix this soon. (You could also try going into the code and removing the error-checking yourself. Everything substantive with the procedure should work out just fine.) In the meantime, we can demonstrate using <code>ddml</code> in Stata to estimate an unconditional LATE with a binarized treatment.</p>
+<pre><code>## 
+## . use card.dta, replace
+## 
+## . local Y lwage
+## 
+## . // ddml for Stata throws an error if D is not binary
+## . gen college = educ &gt;= 16
+## 
+## . local D college
+## 
+## . local Z nearc4
+## 
+## . local X south smsa smsa66 ///
+## &gt;   reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+## &gt;   black exper expersq
+## 
+## . 
+## . local l_xg1 method(gradboost) opt(max_depth(2) learning_rate(.3))
+## 
+## . local l_xg2 method(gradboost) opt(max_depth(6) learning_rate(.01))
+## 
+## . local l_xg3 method(gradboost) opt(max_depth(3) learning_rate(.05))
+## 
+## . local l_rf1 method(rf) opt(n_estimators(500) max_features(3))
+## 
+## . local l_rf2 method(rf) opt(n_estimators(500) max_features(3) max_depth(4))
+## 
+## . local l_rf3 method(rf) opt(n_estimators(500) max_features(5) max_depth(3))
+## 
+## . 
+## . set seed 534023
+## 
+## . ddml init interactiveiv, reps(5) // Set higher in practice
+## 
+## . ddml E[Y|X,Z]: pystacked `Y&#39; `X&#39; || ///
+## &gt;              `l_xg1&#39; || `l_xg2&#39; || `l_xg3&#39; || `l_rf1&#39; || `l_rf2&#39; || `l_rf3&#39;, 
+## &gt; ///
+## &gt;              type(reg) njobs(-1)
+## Learner Y1_pystacked added successfully.
+## 
+## . ddml E[D|X,Z]: pystacked `D&#39; `X&#39; || ///
+## &gt;              `l_xg1&#39; || `l_xg2&#39; || `l_xg3&#39; || `l_rf1&#39; || `l_rf2&#39; || `l_rf3&#39;, 
+## &gt; ///
+## &gt;              type(reg) njobs(-1)
+## Learner D1_pystacked added successfully.
+## 
+## . ddml E[Z|X]: pystacked `Z&#39; `X&#39; || ///
+## &gt;              `l_xg1&#39; || `l_xg2&#39; || `l_xg3&#39; || `l_rf1&#39; || `l_rf2&#39; || `l_rf3&#39;, 
+## &gt; ///
+## &gt;              type(reg) njobs(-1)
+## Learner Z1_pystacked added successfully.
+## 
+## . ddml crossfit, shortstack nostdstack finalest(nnls1)
+## note: treatment (college) = 1 in 215 cases when assignment (nearc4) = 0
+## Cross-fitting E[y|X,Z] equation: lwage
+## Resample 1Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 2...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 3...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 4...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 5...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Cross-fitting E[D|X,Z] equation: college
+## Resample 1...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 2...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 3...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 4...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 5...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Cross-fitting E[Z|X]: nearc4
+## Resample 1...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 2...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 3...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 4...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## Resample 5...
+## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
+## &gt; ing
+## 
+## . ddml estimate, robust
+## 
+## 
+## Model:                  interactiveiv, crossfit folds k=5, resamples r=5
+## Mata global (mname):    m0
+## Dependent variable (Y): lwage
+##  lwage learners:        Y1_pystacked
+## D equations (1):        college
+##  college learners:      D1_pystacked
+## Z equations (1):        nearc4
+##  nearc4 learners:       Z1_pystacked
+## 
+## DDML estimation results (LATE):
+## spec  r  Y(0) learner  Y(1) learner  D(0) learner  D(1) learner         b      
+## &gt;   SE      Z learner
+##   ss  1  [shortstack]          [ss]          [ss]          [ss]     0.647    (0
+## &gt; .435)          [ss]
+##   ss  2  [shortstack]          [ss]          [ss]          [ss]     0.726    (0
+## &gt; .542)          [ss]
+##   ss  3  [shortstack]          [ss]          [ss]          [ss]     0.728    (0
+## &gt; .430)          [ss]
+##   ss  4  [shortstack]          [ss]          [ss]          [ss]     0.701    (0
+## &gt; .402)          [ss]
+##   ss  5  [shortstack]          [ss]          [ss]          [ss]     0.956    (0
+## &gt; .701)          [ss]
+## 
+## Mean/med Y(0) learner  Y(1) learner  D(0) learner  D(1) learner         b      
+## &gt;   SE      Z learner
+##   ss mn  [shortstack]          [ss]          [ss]          [ss]     0.752    (0
+## &gt; .480)          [ss]
+##   ss md  [shortstack]          [ss]          [ss]          [ss]     0.726    (0
+## &gt; .442)          [ss]
+## 
+## Shortstack DDML model (median over 5 resamples) (LATE)
+## E[y|X,Z=0]   = Y_lwage_ss0                         Number of obs   =      3010
+## E[y|X,Z=1]   = Y_lwage_ss1
+## E[D|X,Z=0]   = D_college_ss0
+## E[D|X,Z=1]   = D_college_ss1
+## E[Z|X]       = Z_nearc4_ss
+## ------------------------------------------------------------------------------
+##              |               Robust
+##        lwage | Coefficient  std. err.      z    P&gt;|z|     [95% conf. interval]
+## -------------+----------------------------------------------------------------
+##      college |    .725656    .442449     1.64   0.101    -.1415281     1.59284
+## ------------------------------------------------------------------------------
+## Stacking final estimator: nnls1
+## Warning: 1 resamples had propensity scores trimmed to lower limit .01.
+## 
+## Summary over 5 resamples:
+##        D eqn      mean       min       p25       p50       p75       max
+##      college      0.7516    0.6474    0.7014    0.7257    0.7280    0.9556</code></pre>
+<p>Implementing the IPSW estimator is easier in Stata than <code>R</code> thanks to <span class="citation">Słoczyński, Uysal, and Wooldridge (2024)</span>, who provided a companion module with their paper. The module can be installed with <code>ssc install kappalate</code>. (The name <code>kappalate</code> is a reference to <span class="citation">Abadie (2003)</span>’s <span class="math inline">\(\kappa\)</span>, to which the argument has some relationship, although really it originates from a simpler argument due to <span class="citation">Tan (2006)</span> and <span class="citation">Frölich (2007)</span>.) The module is quite easy to use and also provides analytic standard error estimates.</p>
+<pre><code>## 
+## . use card.dta, replace
+## 
+## . local Y lwage
+## 
+## . local D educ
+## 
+## . local Z nearc4
+## 
+## . local X south smsa smsa66 ///
+## &gt;   reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
+## &gt;   black exper expersq
+## 
+## . 
+## . kappalate `Y&#39; (`D&#39; = `Z&#39;) `X&#39;, zmodel(logit)
+## 
+## Weighting estimation of the LATE
+## 
+## Outcome     :   lwage
+## Treatment   :   educ
+## Instrument  :   nearc4
+## IPS         :   logit ML
+## 
+## Number of obs   =   3010
+## 
+## ------------------------------------------------------------------------------
+##        lwage | Coefficient  Std. err.      z    P&gt;|z|     [95% conf. interval]
+## -------------+----------------------------------------------------------------
+##        tau_u |   .0729357   .0430959     1.69   0.091    -.0115308    .1574022
+## ------------------------------------------------------------------------------</code></pre>
+<p>Notice that the estimate is identical to the one I computed in <code>R</code> above. The analytic standard errors are similar to the bootstrapped standard errors.</p>
+</div>
+</div>
+<div id="marginal-treatment-effects-with-a-binary-treatment" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> Marginal treatment effects with a binary treatment</h1>
+<div id="motivation-2" class="section level2" number="6.1">
+<h2><span class="header-section-number">6.1</span> Motivation</h2>
+<p>Marginal treatment effect (MTE) methods use extrapolation to build estimates of quantities like the average treatment effect or average treatment on the treated that are not nonparametrically point identified under just exogeneity and monotonicity. See Section 4 of the handbook chapter for a thorough discussion. The most common implementation of the MTE idea is with a binary treatment, which is what we’ll explore here, since this is the only case for which software packages have been developed so far. Methods for multivalued treatments currently need to be coded up by hand. Section 4.5 of the handbook chapter provides some details for a linear regression based approach that extends the binary treatment case to ordered treatments.</p>
+</div>
+<div id="gelbach-data" class="section level2" number="6.2">
+<h2><span class="header-section-number">6.2</span> Gelbach data</h2>
+<p>We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by <span class="citation">Gelbach (2002)</span> <a href="url">(link)</a> that consists of single mothers whose youngest child was five years old in 1980. Gelbach used quarter of birth (<code>quarter</code>) as an instrument for public school enrollment (<code>public</code>) to estimate the effect of public school attendance on whether a mother worked (<code>work79</code> in the following). The treatment is binary and the instrument is multivalued.</p>
+<pre class="r"><code>gelbach &lt;- haven::read_dta(&quot;gelbach.dta&quot;)</code></pre>
+</div>
+<div id="r-3" class="section level2" number="6.3">
+<h2><span class="header-section-number">6.3</span> R</h2>
+<p>The <code>ivmte</code> package developed by <span class="citation">Shea and Torgovitsky (2023)</span> can be used to implement MTE methods for a binary treatment. The package can be installed from CRAN, or directly from GitHub for the most up-to-date version by <code>devtools::install_github(&quot;jkcshea/ivmte&quot;)</code>. The following code shows how to use <code>ivmte</code> to estimate the average treatment effect through MTE extrapolation. The marginal treatment response (MTR) curves are specified as linear and additive in covariates.</p>
+<pre class="r"><code>library(ivmte)
+covlist &lt;- c(
+  &quot;white&quot;,
+  &quot;num612&quot;,
+  &quot;num1317&quot;,
+  &quot;numge18&quot;,
+  &quot;othrlt18&quot;,
+  &quot;othrge18&quot;,
+  &quot;grade&quot;,
+  &quot;centcity&quot;,
+  &quot;age&quot;,
+  &quot;age2&quot;
+)
 
-## Stata
-
-It is unfortunately not possible to implement the DDML estimates in Stata at current using the `ddml` package, because the authors require the treatment to be binary in their error-checking.
-I expect this is because it&#39;s not widely appreciated that the same approach estimates an unconditional ACR for multivalued treatments.
-Hopefully the authors will fix this soon.
-(You could also try going into the code and removing the error-checking yourself. Everything substantive with the procedure should work out just fine.)
-In the meantime, we can demonstrate using `ddml` in Stata to estimate an unconditional LATE with a binarized treatment.
-
-</code></pre>
-</div>
-<div id="section-31" class="section level2" number="4.3">
-<h2><span class="header-section-number">4.3</span> </h2>
-</div>
-<div id="use-card.dta-replace-1" class="section level2" number="4.4">
-<h2><span class="header-section-number">4.4</span> . use card.dta, replace</h2>
-</div>
-<div id="section-32" class="section level2" number="4.5">
-<h2><span class="header-section-number">4.5</span> </h2>
-</div>
-<div id="local-y-lwage-1" class="section level2" number="4.6">
-<h2><span class="header-section-number">4.6</span> . local Y lwage</h2>
-</div>
-<div id="section-33" class="section level2" number="4.7">
-<h2><span class="header-section-number">4.7</span> </h2>
-</div>
-<div id="ddml-for-stata-throws-an-error-if-d-is-not-binary" class="section level2" number="4.8">
-<h2><span class="header-section-number">4.8</span> . // ddml for Stata throws an error if D is not binary</h2>
-</div>
-<div id="gen-college-educ-16" class="section level2" number="4.9">
-<h2><span class="header-section-number">4.9</span> . gen college = educ &gt;= 16</h2>
-</div>
-<div id="section-34" class="section level2" number="4.10">
-<h2><span class="header-section-number">4.10</span> </h2>
-</div>
-<div id="local-d-college" class="section level2" number="4.11">
-<h2><span class="header-section-number">4.11</span> . local D college</h2>
-</div>
-<div id="section-35" class="section level2" number="4.12">
-<h2><span class="header-section-number">4.12</span> </h2>
-</div>
-<div id="local-z-nearc4-1" class="section level2" number="4.13">
-<h2><span class="header-section-number">4.13</span> . local Z nearc4</h2>
-</div>
-<div id="section-36" class="section level2" number="4.14">
-<h2><span class="header-section-number">4.14</span> </h2>
-</div>
-<div id="local-x-south-smsa-smsa66-1" class="section level2" number="4.15">
-<h2><span class="header-section-number">4.15</span> . local X south smsa smsa66 ///</h2>
-</div>
-<div id="reg661-reg662-reg663-reg664-reg665-reg666-reg667-reg668-reg669-1" class="section level2" number="4.16">
-<h2><span class="header-section-number">4.16</span> &gt; reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///</h2>
-</div>
-<div id="black-exper-expersq-1" class="section level2" number="4.17">
-<h2><span class="header-section-number">4.17</span> &gt; black exper expersq</h2>
-</div>
-<div id="section-37" class="section level2" number="4.18">
-<h2><span class="header-section-number">4.18</span> </h2>
-</div>
-<div id="section-38" class="section level2" number="4.19">
-<h2><span class="header-section-number">4.19</span> .</h2>
-</div>
-<div id="local-l_xg1-methodgradboost-optmax_depth2-learning_rate.3" class="section level2" number="4.20">
-<h2><span class="header-section-number">4.20</span> . local l_xg1 method(gradboost) opt(max_depth(2) learning_rate(.3))</h2>
-</div>
-<div id="section-39" class="section level2" number="4.21">
-<h2><span class="header-section-number">4.21</span> </h2>
-</div>
-<div id="local-l_xg2-methodgradboost-optmax_depth6-learning_rate.01" class="section level2" number="4.22">
-<h2><span class="header-section-number">4.22</span> . local l_xg2 method(gradboost) opt(max_depth(6) learning_rate(.01))</h2>
-</div>
-<div id="section-40" class="section level2" number="4.23">
-<h2><span class="header-section-number">4.23</span> </h2>
-</div>
-<div id="local-l_xg3-methodgradboost-optmax_depth3-learning_rate.05" class="section level2" number="4.24">
-<h2><span class="header-section-number">4.24</span> . local l_xg3 method(gradboost) opt(max_depth(3) learning_rate(.05))</h2>
-</div>
-<div id="section-41" class="section level2" number="4.25">
-<h2><span class="header-section-number">4.25</span> </h2>
-</div>
-<div id="local-l_rf1-methodrf-optn_estimators500-max_features3" class="section level2" number="4.26">
-<h2><span class="header-section-number">4.26</span> . local l_rf1 method(rf) opt(n_estimators(500) max_features(3))</h2>
-</div>
-<div id="section-42" class="section level2" number="4.27">
-<h2><span class="header-section-number">4.27</span> </h2>
-</div>
-<div id="local-l_rf2-methodrf-optn_estimators500-max_features3-max_depth4" class="section level2" number="4.28">
-<h2><span class="header-section-number">4.28</span> . local l_rf2 method(rf) opt(n_estimators(500) max_features(3) max_depth(4))</h2>
-</div>
-<div id="section-43" class="section level2" number="4.29">
-<h2><span class="header-section-number">4.29</span> </h2>
-</div>
-<div id="local-l_rf3-methodrf-optn_estimators500-max_features5-max_depth3" class="section level2" number="4.30">
-<h2><span class="header-section-number">4.30</span> . local l_rf3 method(rf) opt(n_estimators(500) max_features(5) max_depth(3))</h2>
-</div>
-<div id="section-44" class="section level2" number="4.31">
-<h2><span class="header-section-number">4.31</span> </h2>
-</div>
-<div id="section-45" class="section level2" number="4.32">
-<h2><span class="header-section-number">4.32</span> .</h2>
-</div>
-<div id="set-seed-534023" class="section level2" number="4.33">
-<h2><span class="header-section-number">4.33</span> . set seed 534023</h2>
-</div>
-<div id="section-46" class="section level2" number="4.34">
-<h2><span class="header-section-number">4.34</span> </h2>
-</div>
-<div id="ddml-init-interactiveiv-reps5-set-higher-in-practice" class="section level2" number="4.35">
-<h2><span class="header-section-number">4.35</span> . ddml init interactiveiv, reps(5) // Set higher in practice</h2>
-</div>
-<div id="section-47" class="section level2" number="4.36">
-<h2><span class="header-section-number">4.36</span> </h2>
-</div>
-<div id="ddml-eyxz-pystacked-yx" class="section level2" number="4.37">
-<h2><span class="header-section-number">4.37</span> . ddml E[Y|X,Z]: pystacked <code>Y&#39;</code>X’ || ///</h2>
-</div>
-<div id="l_xg1-l_xg2-l_xg3-l_rf1-l_rf2-l_rf3" class="section level2" number="4.38">
-<h2><span class="header-section-number">4.38</span> &gt; <code>l_xg1&#39; ||</code>l_xg2’ || <code>l_xg3&#39; ||</code>l_rf1’ || <code>l_rf2&#39; ||</code>l_rf3’,</h2>
-</div>
-<div id="section-48" class="section level2" number="4.39">
-<h2><span class="header-section-number">4.39</span> &gt; ///</h2>
-</div>
-<div id="typereg-njobs-1" class="section level2" number="4.40">
-<h2><span class="header-section-number">4.40</span> &gt; type(reg) njobs(-1)</h2>
-</div>
-<div id="learner-y1_pystacked-added-successfully." class="section level2" number="4.41">
-<h2><span class="header-section-number">4.41</span> Learner Y1_pystacked added successfully.</h2>
-</div>
-<div id="section-49" class="section level2" number="4.42">
-<h2><span class="header-section-number">4.42</span> </h2>
-</div>
-<div id="ddml-edxz-pystacked-dx" class="section level2" number="4.43">
-<h2><span class="header-section-number">4.43</span> . ddml E[D|X,Z]: pystacked <code>D&#39;</code>X’ || ///</h2>
-</div>
-<div id="l_xg1-l_xg2-l_xg3-l_rf1-l_rf2-l_rf3-1" class="section level2" number="4.44">
-<h2><span class="header-section-number">4.44</span> &gt; <code>l_xg1&#39; ||</code>l_xg2’ || <code>l_xg3&#39; ||</code>l_rf1’ || <code>l_rf2&#39; ||</code>l_rf3’,</h2>
-</div>
-<div id="section-50" class="section level2" number="4.45">
-<h2><span class="header-section-number">4.45</span> &gt; ///</h2>
-</div>
-<div id="typereg-njobs-1-1" class="section level2" number="4.46">
-<h2><span class="header-section-number">4.46</span> &gt; type(reg) njobs(-1)</h2>
-</div>
-<div id="learner-d1_pystacked-added-successfully." class="section level2" number="4.47">
-<h2><span class="header-section-number">4.47</span> Learner D1_pystacked added successfully.</h2>
-</div>
-<div id="section-51" class="section level2" number="4.48">
-<h2><span class="header-section-number">4.48</span> </h2>
-</div>
-<div id="ddml-ezx-pystacked-zx" class="section level2" number="4.49">
-<h2><span class="header-section-number">4.49</span> . ddml E[Z|X]: pystacked <code>Z&#39;</code>X’ || ///</h2>
-</div>
-<div id="l_xg1-l_xg2-l_xg3-l_rf1-l_rf2-l_rf3-2" class="section level2" number="4.50">
-<h2><span class="header-section-number">4.50</span> &gt; <code>l_xg1&#39; ||</code>l_xg2’ || <code>l_xg3&#39; ||</code>l_rf1’ || <code>l_rf2&#39; ||</code>l_rf3’,</h2>
-</div>
-<div id="section-52" class="section level2" number="4.51">
-<h2><span class="header-section-number">4.51</span> &gt; ///</h2>
-</div>
-<div id="typereg-njobs-1-2" class="section level2" number="4.52">
-<h2><span class="header-section-number">4.52</span> &gt; type(reg) njobs(-1)</h2>
-</div>
-<div id="learner-z1_pystacked-added-successfully." class="section level2" number="4.53">
-<h2><span class="header-section-number">4.53</span> Learner Z1_pystacked added successfully.</h2>
-</div>
-<div id="section-53" class="section level2" number="4.54">
-<h2><span class="header-section-number">4.54</span> </h2>
-</div>
-<div id="ddml-crossfit-shortstack-nostdstack-finalestnnls1" class="section level2" number="4.55">
-<h2><span class="header-section-number">4.55</span> . ddml crossfit, shortstack nostdstack finalest(nnls1)</h2>
-</div>
-<div id="note-treatment-college-1-in-215-cases-when-assignment-nearc4-0" class="section level2" number="4.56">
-<h2><span class="header-section-number">4.56</span> note: treatment (college) = 1 in 215 cases when assignment (nearc4) = 0</h2>
-</div>
-<div id="cross-fitting-eyxz-equation-lwage" class="section level2" number="4.57">
-<h2><span class="header-section-number">4.57</span> Cross-fitting E[y|X,Z] equation: lwage</h2>
-</div>
-<div id="resample-1cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack" class="section level2" number="4.58">
-<h2><span class="header-section-number">4.58</span> Resample 1Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing" class="section level2" number="4.59">
-<h2><span class="header-section-number">4.59</span> &gt; ing</h2>
-</div>
-<div id="resample-2" class="section level2" number="4.60">
-<h2><span class="header-section-number">4.60</span> Resample 2…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack" class="section level2" number="4.61">
-<h2><span class="header-section-number">4.61</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-1" class="section level2" number="4.62">
-<h2><span class="header-section-number">4.62</span> &gt; ing</h2>
-</div>
-<div id="resample-3" class="section level2" number="4.63">
-<h2><span class="header-section-number">4.63</span> Resample 3…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-1" class="section level2" number="4.64">
-<h2><span class="header-section-number">4.64</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-2" class="section level2" number="4.65">
-<h2><span class="header-section-number">4.65</span> &gt; ing</h2>
-</div>
-<div id="resample-4" class="section level2" number="4.66">
-<h2><span class="header-section-number">4.66</span> Resample 4…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-2" class="section level2" number="4.67">
-<h2><span class="header-section-number">4.67</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-3" class="section level2" number="4.68">
-<h2><span class="header-section-number">4.68</span> &gt; ing</h2>
-</div>
-<div id="resample-5" class="section level2" number="4.69">
-<h2><span class="header-section-number">4.69</span> Resample 5…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-3" class="section level2" number="4.70">
-<h2><span class="header-section-number">4.70</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-4" class="section level2" number="4.71">
-<h2><span class="header-section-number">4.71</span> &gt; ing</h2>
-</div>
-<div id="cross-fitting-edxz-equation-college" class="section level2" number="4.72">
-<h2><span class="header-section-number">4.72</span> Cross-fitting E[D|X,Z] equation: college</h2>
-</div>
-<div id="resample-1" class="section level2" number="4.73">
-<h2><span class="header-section-number">4.73</span> Resample 1…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-4" class="section level2" number="4.74">
-<h2><span class="header-section-number">4.74</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-5" class="section level2" number="4.75">
-<h2><span class="header-section-number">4.75</span> &gt; ing</h2>
-</div>
-<div id="resample-2-1" class="section level2" number="4.76">
-<h2><span class="header-section-number">4.76</span> Resample 2…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-5" class="section level2" number="4.77">
-<h2><span class="header-section-number">4.77</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-6" class="section level2" number="4.78">
-<h2><span class="header-section-number">4.78</span> &gt; ing</h2>
-</div>
-<div id="resample-3-1" class="section level2" number="4.79">
-<h2><span class="header-section-number">4.79</span> Resample 3…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-6" class="section level2" number="4.80">
-<h2><span class="header-section-number">4.80</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-7" class="section level2" number="4.81">
-<h2><span class="header-section-number">4.81</span> &gt; ing</h2>
-</div>
-<div id="resample-4-1" class="section level2" number="4.82">
-<h2><span class="header-section-number">4.82</span> Resample 4…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-7" class="section level2" number="4.83">
-<h2><span class="header-section-number">4.83</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-8" class="section level2" number="4.84">
-<h2><span class="header-section-number">4.84</span> &gt; ing</h2>
-</div>
-<div id="resample-5-1" class="section level2" number="4.85">
-<h2><span class="header-section-number">4.85</span> Resample 5…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-8" class="section level2" number="4.86">
-<h2><span class="header-section-number">4.86</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-9" class="section level2" number="4.87">
-<h2><span class="header-section-number">4.87</span> &gt; ing</h2>
-</div>
-<div id="cross-fitting-ezx-nearc4" class="section level2" number="4.88">
-<h2><span class="header-section-number">4.88</span> Cross-fitting E[Z|X]: nearc4</h2>
-</div>
-<div id="resample-1-1" class="section level2" number="4.89">
-<h2><span class="header-section-number">4.89</span> Resample 1…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-9" class="section level2" number="4.90">
-<h2><span class="header-section-number">4.90</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-10" class="section level2" number="4.91">
-<h2><span class="header-section-number">4.91</span> &gt; ing</h2>
-</div>
-<div id="resample-2-2" class="section level2" number="4.92">
-<h2><span class="header-section-number">4.92</span> Resample 2…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-10" class="section level2" number="4.93">
-<h2><span class="header-section-number">4.93</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-11" class="section level2" number="4.94">
-<h2><span class="header-section-number">4.94</span> &gt; ing</h2>
-</div>
-<div id="resample-3-2" class="section level2" number="4.95">
-<h2><span class="header-section-number">4.95</span> Resample 3…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-11" class="section level2" number="4.96">
-<h2><span class="header-section-number">4.96</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-12" class="section level2" number="4.97">
-<h2><span class="header-section-number">4.97</span> &gt; ing</h2>
-</div>
-<div id="resample-4-2" class="section level2" number="4.98">
-<h2><span class="header-section-number">4.98</span> Resample 4…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-12" class="section level2" number="4.99">
-<h2><span class="header-section-number">4.99</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-13" class="section level2" number="4.100">
-<h2><span class="header-section-number">4.100</span> &gt; ing</h2>
-</div>
-<div id="resample-5-2" class="section level2" number="4.101">
-<h2><span class="header-section-number">4.101</span> Resample 5…</h2>
-</div>
-<div id="cross-fitting-fold-1-2-3-4-5-completed-cross-fittingcompleted-short-stack-13" class="section level2" number="4.102">
-<h2><span class="header-section-number">4.102</span> Cross-fitting fold 1 2 3 4 5 …completed cross-fitting…completed short-stack</h2>
-</div>
-<div id="ing-14" class="section level2" number="4.103">
-<h2><span class="header-section-number">4.103</span> &gt; ing</h2>
-</div>
-<div id="section-54" class="section level2" number="4.104">
-<h2><span class="header-section-number">4.104</span> </h2>
-</div>
-<div id="ddml-estimate-robust" class="section level2" number="4.105">
-<h2><span class="header-section-number">4.105</span> . ddml estimate, robust</h2>
-</div>
-<div id="section-55" class="section level2" number="4.106">
-<h2><span class="header-section-number">4.106</span> </h2>
-</div>
-<div id="section-56" class="section level2" number="4.107">
-<h2><span class="header-section-number">4.107</span> </h2>
-</div>
-<div id="model-interactiveiv-crossfit-folds-k5-resamples-r5" class="section level2" number="4.108">
-<h2><span class="header-section-number">4.108</span> Model: interactiveiv, crossfit folds k=5, resamples r=5</h2>
-</div>
-<div id="mata-global-mname-m0" class="section level2" number="4.109">
-<h2><span class="header-section-number">4.109</span> Mata global (mname): m0</h2>
-</div>
-<div id="dependent-variable-y-lwage" class="section level2" number="4.110">
-<h2><span class="header-section-number">4.110</span> Dependent variable (Y): lwage</h2>
-</div>
-<div id="lwage-learners-y1_pystacked" class="section level2" number="4.111">
-<h2><span class="header-section-number">4.111</span> lwage learners: Y1_pystacked</h2>
-</div>
-<div id="d-equations-1-college" class="section level2" number="4.112">
-<h2><span class="header-section-number">4.112</span> D equations (1): college</h2>
-</div>
-<div id="college-learners-d1_pystacked" class="section level2" number="4.113">
-<h2><span class="header-section-number">4.113</span> college learners: D1_pystacked</h2>
-</div>
-<div id="z-equations-1-nearc4" class="section level2" number="4.114">
-<h2><span class="header-section-number">4.114</span> Z equations (1): nearc4</h2>
-</div>
-<div id="nearc4-learners-z1_pystacked" class="section level2" number="4.115">
-<h2><span class="header-section-number">4.115</span> nearc4 learners: Z1_pystacked</h2>
-</div>
-<div id="section-57" class="section level2" number="4.116">
-<h2><span class="header-section-number">4.116</span> </h2>
-</div>
-<div id="ddml-estimation-results-late" class="section level2" number="4.117">
-<h2><span class="header-section-number">4.117</span> DDML estimation results (LATE):</h2>
-</div>
-<div id="spec-r-y0-learner-y1-learner-d0-learner-d1-learner-b" class="section level2" number="4.118">
-<h2><span class="header-section-number">4.118</span> spec r Y(0) learner Y(1) learner D(0) learner D(1) learner b</h2>
-</div>
-<div id="se-z-learner" class="section level2" number="4.119">
-<h2><span class="header-section-number">4.119</span> &gt; SE Z learner</h2>
-</div>
-<div id="ss-1-shortstack-ss-ss-ss-0.647-0" class="section level2" number="4.120">
-<h2><span class="header-section-number">4.120</span> ss 1 [shortstack] [ss] [ss] [ss] 0.647 (0</h2>
-</div>
-<div id="ss" class="section level2" number="4.121">
-<h2><span class="header-section-number">4.121</span> &gt; .435) [ss]</h2>
-</div>
-<div id="ss-2-shortstack-ss-ss-ss-0.726-0" class="section level2" number="4.122">
-<h2><span class="header-section-number">4.122</span> ss 2 [shortstack] [ss] [ss] [ss] 0.726 (0</h2>
-</div>
-<div id="ss-1" class="section level2" number="4.123">
-<h2><span class="header-section-number">4.123</span> &gt; .542) [ss]</h2>
-</div>
-<div id="ss-3-shortstack-ss-ss-ss-0.728-0" class="section level2" number="4.124">
-<h2><span class="header-section-number">4.124</span> ss 3 [shortstack] [ss] [ss] [ss] 0.728 (0</h2>
-</div>
-<div id="ss-2" class="section level2" number="4.125">
-<h2><span class="header-section-number">4.125</span> &gt; .430) [ss]</h2>
-</div>
-<div id="ss-4-shortstack-ss-ss-ss-0.701-0" class="section level2" number="4.126">
-<h2><span class="header-section-number">4.126</span> ss 4 [shortstack] [ss] [ss] [ss] 0.701 (0</h2>
-</div>
-<div id="ss-3" class="section level2" number="4.127">
-<h2><span class="header-section-number">4.127</span> &gt; .402) [ss]</h2>
-</div>
-<div id="ss-5-shortstack-ss-ss-ss-0.956-0" class="section level2" number="4.128">
-<h2><span class="header-section-number">4.128</span> ss 5 [shortstack] [ss] [ss] [ss] 0.956 (0</h2>
-</div>
-<div id="ss-4" class="section level2" number="4.129">
-<h2><span class="header-section-number">4.129</span> &gt; .701) [ss]</h2>
-</div>
-<div id="section-58" class="section level2" number="4.130">
-<h2><span class="header-section-number">4.130</span> </h2>
-</div>
-<div id="meanmed-y0-learner-y1-learner-d0-learner-d1-learner-b" class="section level2" number="4.131">
-<h2><span class="header-section-number">4.131</span> Mean/med Y(0) learner Y(1) learner D(0) learner D(1) learner b</h2>
-</div>
-<div id="se-z-learner-1" class="section level2" number="4.132">
-<h2><span class="header-section-number">4.132</span> &gt; SE Z learner</h2>
-</div>
-<div id="ss-mn-shortstack-ss-ss-ss-0.752-0" class="section level2" number="4.133">
-<h2><span class="header-section-number">4.133</span> ss mn [shortstack] [ss] [ss] [ss] 0.752 (0</h2>
-</div>
-<div id="ss-5" class="section level2" number="4.134">
-<h2><span class="header-section-number">4.134</span> &gt; .480) [ss]</h2>
-</div>
-<div id="ss-md-shortstack-ss-ss-ss-0.726-0" class="section level2" number="4.135">
-<h2><span class="header-section-number">4.135</span> ss md [shortstack] [ss] [ss] [ss] 0.726 (0</h2>
-</div>
-<div id="ss-6" class="section level2" number="4.136">
-<h2><span class="header-section-number">4.136</span> &gt; .442) [ss]</h2>
-</div>
-<div id="section-59" class="section level2" number="4.137">
-<h2><span class="header-section-number">4.137</span> </h2>
-</div>
-<div id="shortstack-ddml-model-median-over-5-resamples-late" class="section level2" number="4.138">
-<h2><span class="header-section-number">4.138</span> Shortstack DDML model (median over 5 resamples) (LATE)</h2>
-</div>
-<div id="eyxz0-y_lwage_ss0-number-of-obs-3010" class="section level2" number="4.139">
-<h2><span class="header-section-number">4.139</span> E[y|X,Z=0] = Y_lwage_ss0 Number of obs = 3010</h2>
-</div>
-<div id="eyxz1-y_lwage_ss1" class="section level2" number="4.140">
-<h2><span class="header-section-number">4.140</span> E[y|X,Z=1] = Y_lwage_ss1</h2>
-</div>
-<div id="edxz0-d_college_ss0" class="section level2" number="4.141">
-<h2><span class="header-section-number">4.141</span> E[D|X,Z=0] = D_college_ss0</h2>
-</div>
-<div id="edxz1-d_college_ss1" class="section level2" number="4.142">
-<h2><span class="header-section-number">4.142</span> E[D|X,Z=1] = D_college_ss1</h2>
-</div>
-<div id="ezx-z_nearc4_ss" class="section level2" number="4.143">
-<h2><span class="header-section-number">4.143</span> E[Z|X] = Z_nearc4_ss</h2>
-</div>
-<div id="section-60" class="section level2" number="4.144">
-<h2><span class="header-section-number">4.144</span> ——————————————————————————</h2>
-</div>
-<div id="robust" class="section level2" number="4.145">
-<h2><span class="header-section-number">4.145</span> | Robust</h2>
-</div>
-<div id="lwage-coefficient-std.-err.-z-pz-95-conf.-interval" class="section level2" number="4.146">
-<h2><span class="header-section-number">4.146</span> lwage | Coefficient std. err. z P&gt;|z| [95% conf. interval]</h2>
-</div>
-<div id="section-61" class="section level2" number="4.147">
-<h2><span class="header-section-number">4.147</span> ————-+—————————————————————-</h2>
-</div>
-<div id="college-.725656-.442449-1.64-0.101--.1415281-1.59284" class="section level2" number="4.148">
-<h2><span class="header-section-number">4.148</span> college | .725656 .442449 1.64 0.101 -.1415281 1.59284</h2>
-</div>
-<div id="section-62" class="section level2" number="4.149">
-<h2><span class="header-section-number">4.149</span> ——————————————————————————</h2>
-</div>
-<div id="stacking-final-estimator-nnls1" class="section level2" number="4.150">
-<h2><span class="header-section-number">4.150</span> Stacking final estimator: nnls1</h2>
-</div>
-<div id="warning-1-resamples-had-propensity-scores-trimmed-to-lower-limit-.01." class="section level2" number="4.151">
-<h2><span class="header-section-number">4.151</span> Warning: 1 resamples had propensity scores trimmed to lower limit .01.</h2>
-</div>
-<div id="section-63" class="section level2" number="4.152">
-<h2><span class="header-section-number">4.152</span> </h2>
-</div>
-<div id="summary-over-5-resamples" class="section level2" number="4.153">
-<h2><span class="header-section-number">4.153</span> Summary over 5 resamples:</h2>
-</div>
-<div id="d-eqn-mean-min-p25-p50-p75-max" class="section level2" number="4.154">
-<h2><span class="header-section-number">4.154</span> D eqn mean min p25 p50 p75 max</h2>
-</div>
-<div id="college-0.7516-0.6474-0.7014-0.7257-0.7280-0.9556" class="section level2" number="4.155">
-<h2><span class="header-section-number">4.155</span> college 0.7516 0.6474 0.7014 0.7257 0.7280 0.9556</h2>
-<pre><code>
-Implementing the IPSW estimator is easier in Stata than `R` thanks to @sloczynskiuysalwooldridge2024job&amp;es, who provided a companion module with their paper.
-The module can be installed with `ssc install kappalate`.
-(The name `kappalate` is a reference to @abadie2003joe&#39;s $\kappa$, to which the argument has some relationship, although really it originates from a simpler argument due to @tan2006jasa and @frolich2007joe.)
-The module is quite easy to use and also provides analytic standard error estimates.
-
-</code></pre>
-</div>
-<div id="section-64" class="section level2" number="4.156">
-<h2><span class="header-section-number">4.156</span> </h2>
-</div>
-<div id="use-card.dta-replace-2" class="section level2" number="4.157">
-<h2><span class="header-section-number">4.157</span> . use card.dta, replace</h2>
-</div>
-<div id="section-65" class="section level2" number="4.158">
-<h2><span class="header-section-number">4.158</span> </h2>
-</div>
-<div id="local-y-lwage-2" class="section level2" number="4.159">
-<h2><span class="header-section-number">4.159</span> . local Y lwage</h2>
-</div>
-<div id="section-66" class="section level2" number="4.160">
-<h2><span class="header-section-number">4.160</span> </h2>
-</div>
-<div id="local-d-educ-1" class="section level2" number="4.161">
-<h2><span class="header-section-number">4.161</span> . local D educ</h2>
-</div>
-<div id="section-67" class="section level2" number="4.162">
-<h2><span class="header-section-number">4.162</span> </h2>
-</div>
-<div id="local-z-nearc4-2" class="section level2" number="4.163">
-<h2><span class="header-section-number">4.163</span> . local Z nearc4</h2>
-</div>
-<div id="section-68" class="section level2" number="4.164">
-<h2><span class="header-section-number">4.164</span> </h2>
-</div>
-<div id="local-x-south-smsa-smsa66-2" class="section level2" number="4.165">
-<h2><span class="header-section-number">4.165</span> . local X south smsa smsa66 ///</h2>
-</div>
-<div id="reg661-reg662-reg663-reg664-reg665-reg666-reg667-reg668-reg669-2" class="section level2" number="4.166">
-<h2><span class="header-section-number">4.166</span> &gt; reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///</h2>
-</div>
-<div id="black-exper-expersq-2" class="section level2" number="4.167">
-<h2><span class="header-section-number">4.167</span> &gt; black exper expersq</h2>
-</div>
-<div id="section-69" class="section level2" number="4.168">
-<h2><span class="header-section-number">4.168</span> </h2>
-</div>
-<div id="section-70" class="section level2" number="4.169">
-<h2><span class="header-section-number">4.169</span> .</h2>
-</div>
-<div id="kappalate-y-d-zx-zmodellogit" class="section level2" number="4.170">
-<h2><span class="header-section-number">4.170</span> . kappalate <code>Y&#39; (</code>D’ = <code>Z&#39;)</code>X’, zmodel(logit)</h2>
-</div>
-<div id="section-71" class="section level2" number="4.171">
-<h2><span class="header-section-number">4.171</span> </h2>
-</div>
-<div id="weighting-estimation-of-the-late" class="section level2" number="4.172">
-<h2><span class="header-section-number">4.172</span> Weighting estimation of the LATE</h2>
-</div>
-<div id="section-72" class="section level2" number="4.173">
-<h2><span class="header-section-number">4.173</span> </h2>
-</div>
-<div id="outcome-lwage" class="section level2" number="4.174">
-<h2><span class="header-section-number">4.174</span> Outcome : lwage</h2>
-</div>
-<div id="treatment-educ" class="section level2" number="4.175">
-<h2><span class="header-section-number">4.175</span> Treatment : educ</h2>
-</div>
-<div id="instrument-nearc4" class="section level2" number="4.176">
-<h2><span class="header-section-number">4.176</span> Instrument : nearc4</h2>
-</div>
-<div id="ips-logit-ml" class="section level2" number="4.177">
-<h2><span class="header-section-number">4.177</span> IPS : logit ML</h2>
-</div>
-<div id="section-73" class="section level2" number="4.178">
-<h2><span class="header-section-number">4.178</span> </h2>
-</div>
-<div id="number-of-obs-3010" class="section level2" number="4.179">
-<h2><span class="header-section-number">4.179</span> Number of obs = 3010</h2>
-</div>
-<div id="section-74" class="section level2" number="4.180">
-<h2><span class="header-section-number">4.180</span> </h2>
-</div>
-<div id="section-75" class="section level2" number="4.181">
-<h2><span class="header-section-number">4.181</span> ——————————————————————————</h2>
-</div>
-<div id="lwage-coefficient-std.-err.-z-pz-95-conf.-interval-1" class="section level2" number="4.182">
-<h2><span class="header-section-number">4.182</span> lwage | Coefficient Std. err. z P&gt;|z| [95% conf. interval]</h2>
-</div>
-<div id="section-76" class="section level2" number="4.183">
-<h2><span class="header-section-number">4.183</span> ————-+—————————————————————-</h2>
-</div>
-<div id="tau_u-.0729357-.0430959-1.69-0.091--.0115308-.1574022" class="section level2" number="4.184">
-<h2><span class="header-section-number">4.184</span> tau_u | .0729357 .0430959 1.69 0.091 -.0115308 .1574022</h2>
-</div>
-<div id="section-77" class="section level2" number="4.185">
-<h2><span class="header-section-number">4.185</span> ——————————————————————————</h2>
-<pre><code>
-Notice that the estimate is identical to the one I computed in `R` above.
-The analytic standard errors are similar to the bootstrapped standard errors.
-
-# Marginal treatment effects with a binary treatment
-
-## Motivation
-
-Marginal treatment effect (MTE) methods use extrapolation to build estimates of quantities like the average treatment effect or average treatment on the treated that are not nonparametrically point identified under just exogeneity and monotonicity.
-See Section 4 of the handbook chapter for a thorough discussion.
-The most common implementation of the MTE idea is with a binary treatment, which is what we&#39;ll explore here, since this is the only case for which software packages have been developed so far.
-Methods for multivalued treatments currently need to be coded up by hand.
-Section 4.5 of the handbook chapter provides some details for a linear regression based approach that extends the binary treatment case to ordered treatments.
-
-## Gelbach data
-
-We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by @gelbach2002taer [(link)](url)  that consists of single mothers whose youngest child was five years old in 1980.
-Gelbach used quarter of birth (`quarter`) as an instrument for public school enrollment (`public`) to estimate the effect of public school attendance on whether a mother worked (`work79` in the following).
-The treatment is binary and the instrument is multivalued.
-gelbach &lt;- haven::read_dta(&quot;gelbach.dta&quot;)
-
-``` r
-gelbach &lt;- haven::read_dta(&quot;gelbach.dta&quot;)</code></pre>
-</div>
-<div id="r-3" class="section level2" number="4.186">
-<h2><span class="header-section-number">4.186</span> R</h2>
-<p>The <code>ivmte</code> package developed by <span class="citation">Shea and Torgovitsky (2023)</span> can be used to implement MTE methods for a binary treatment. The package can be installed from CRAN, or directly from GitHub for the most up-to-date version by <code>devtools::install_github(&quot;jkcshea/ivmte&quot;)</code>. The following code shows how to use <code>ivmte</code> to estimate the average treatment effect through MTE extrapolation. The marginal treatment response (MTR) curves are specified as linear and additive in covariates. library(ivmte) covlist &lt;- c( “white”, “num612”, “num1317”, “numge18”, “othrlt18”, “othrge18”, “grade”, “centcity”, “age”, “age2” )</p>
-<p>set.seed(393813) f_covlist &lt;- paste(covlist, collapse = ” + “) f_pscore &lt;- as.formula(paste(”public ~ quarter + “, f_covlist)) f_mtr &lt;- as.formula(paste(”~ u + “, f_covlist)) nbs &lt;- 10 # Make this larger in practice args &lt;- list( data = gelbach, outcome =”work79”, propensity = f_pscore, target = “ate”, m0 = f_mtr, m1 = f_mtr, point = TRUE, bootstraps = nbs ) r &lt;- do.call(ivmte::ivmte, args) r<span class="math inline">\(point.estimate r\)</span>point.estimate.se:ivmte, args) r<span class="math inline">\(point.estimate r\)</span>point.estimate.se</p>
-<pre><code>
-The `ivmte` package contains much more functionality; for full details, [see the repository](https://github.com/jkcshea/ivmte) or [the accompanying paper](https://muse.jhu.edu/pub/56/article/883476/pdf).
-Here&#39;s what it is doing under the hood in this simple example:
-# This function estimate the MTE and the implied ATE
+set.seed(393813)
+f_covlist &lt;- paste(covlist, collapse = &quot; + &quot;)
+f_pscore &lt;- as.formula(paste(&quot;public ~ quarter + &quot;, f_covlist))
+f_mtr &lt;- as.formula(paste(&quot;~ u + &quot;, f_covlist))
+nbs &lt;- 10 # Make this larger in practice
+args &lt;- list(
+  data = gelbach,
+  outcome = &quot;work79&quot;,
+  propensity = f_pscore,
+  target = &quot;ate&quot;,
+  m0 = f_mtr,
+  m1 = f_mtr,
+  point = TRUE,
+  bootstraps = nbs
+)
+r &lt;- do.call(ivmte::ivmte, args)</code></pre>
+<pre><code>## Warning: None of the compatible solvers are installed, so estimation is only possible under point
+## identification. MTR coefficients will be estimated using OLS, and an estimate of the target parameter
+## will be returned only if the MTR coefficients are point identified.</code></pre>
+<pre class="r"><code>r$point.estimate</code></pre>
+<pre><code>## [1] 0.01494237</code></pre>
+<pre class="r"><code>r$point.estimate.se</code></pre>
+<pre><code>## [1] 0.05404659</code></pre>
+<p>The <code>ivmte</code> package contains much more functionality; for full details, <a href="https://github.com/jkcshea/ivmte">see the repository</a> or <a href="https://muse.jhu.edu/pub/56/article/883476/pdf">the accompanying paper</a>. Here’s what it is doing under the hood in this simple example:</p>
+<pre class="r"><code># This function estimate the MTE and the implied ATE
 mte_ate &lt;- function(data) {
   pscore &lt;- glm(data = data, f = f_pscore, family = binomial)
   f_mtr &lt;- as.formula(paste(&quot;work79 ~ fp + &quot;, f_covlist))
@@ -1549,18 +1109,19 @@ mte_ate &lt;- function(data) {
   return(eyd[2] - eyd[1]) # Estimate of the ATE
 }
 
-mte_ate(gelbach) # point estimate matches that from ivmte
-sapply(seq_len(nbs), function(i) { # bootstrap by hand
+mte_ate(gelbach) # point estimate matches that from ivmte</code></pre>
+<pre><code>##          1 
+## 0.01494237</code></pre>
+<pre class="r"><code>sapply(seq_len(nbs), function(i) { # bootstrap by hand
   idx &lt;- sample(nrow(gelbach), nrow(gelbach), replace = TRUE)
   dfbs &lt;- gelbach[idx, ]
   mte_ate(dfbs)
 }) %&gt;%
-  sd() # standard error is similar
-}) %&gt;%
   sd() # standard error is similar</code></pre>
+<pre><code>## [1] 0.05094001</code></pre>
 </div>
-<div id="stata-1" class="section level2" number="4.187">
-<h2><span class="header-section-number">4.187</span> Stata</h2>
+<div id="stata-4" class="section level2" number="6.4">
+<h2><span class="header-section-number">6.4</span> Stata</h2>
 <p>The <code>mtefe</code> module developed by <span class="citation">Andresen (2018)</span> is an excellent implementation of MTE for Stata. It also has a large number of options and functionality that is well-explained in Andresen’s <em>Stata Journal</em> paper. It can be installed with <code>ssc install mtefe</code>. Here’s how to reproduce the above estimates for the <code>R</code> code.</p>
 <pre><code>## 
 ## . use gelbach.dta, replace
@@ -1585,6 +1146,9 @@ sapply(seq_len(nbs), function(i) { # bootstrap by hand
 <div id="references" class="section level1 unnumbered">
 <h1 class="unnumbered">References</h1>
 <div id="refs" class="references csl-bib-body hanging-indent">
+<div id="ref-abadie2003joe" class="csl-entry">
+Abadie, Alberto. 2003. <span>“Semiparametric Instrumental Variable Estimation of Treatment Response Models.”</span> <em>Journal of Econometrics</em> 113 (2): 231–63.
+</div>
 <div id="ref-ahrenshansenschafferwiemann2023" class="csl-entry">
 Ahrens, Achim, Christian B. Hansen, Mark E. Schaffer, and Thomas Wiemann. 2023. <span>“Ddml: <span>Double</span>/Debiased Machine Learning in <span>Stata</span>.”</span> arXiv. <a href="https://doi.org/10.48550/arXiv.2301.09397">https://doi.org/10.48550/arXiv.2301.09397</a>.
 </div>
@@ -1596,6 +1160,12 @@ Ahrens, Achim, Christian B Hansen, Mark E Schaffer, and Thomas Wiemann. 2024b. <
 </div>
 <div id="ref-andresen2018tsj" class="csl-entry">
 Andresen, Martin Eckhoff. 2018. <span>“Exploring <span>Marginal Treatment Effects</span>: <span>Flexible Estimation Using Stata</span>.”</span> <em>The Stata Journal: Promoting Communications on Statistics and Stata</em> 18 (1): 118–58. <a href="https://doi.org/10.1177/1536867X1801800108">https://doi.org/10.1177/1536867X1801800108</a>.
+</div>
+<div id="ref-angristimbens1995jotasa" class="csl-entry">
+Angrist, Joshua D., and Guido W. Imbens. 1995. <span>“Two-<span>Stage Least Squares Estimation</span> of <span>Average Causal Effects</span> in <span>Models</span> with <span>Variable Treatment Intensity</span>.”</span> <em>Journal of the American Statistical Association</em> 90 (430): 431–42. <a href="https://www.jstor.org/stable/2291054">https://www.jstor.org/stable/2291054</a>.
+</div>
+<div id="ref-angristpischke2009" class="csl-entry">
+Angrist, Joshua D., and Jörn-Steffen Pischke. 2009. <em>Mostly <span>Harmless Econometrics</span>: <span>An Empiricist</span>’s <span>Companion</span></em>. Princeton University Press.
 </div>
 <div id="ref-bachkurzchernozhukovspindlerklaassen2024jss" class="csl-entry">
 Bach, Philipp, Malte S. Kurz, Victor Chernozhukov, Martin Spindler, and Sven Klaassen. 2024. <span>“<span>DoubleML</span>: <span>An</span> Object-Oriented Implementation of Double Machine Learning in <span>R</span>.”</span> <em>Journal of Statistical Software</em> 108 (3): 1–56. <a href="https://doi.org/10.18637/jss.v108.i03">https://doi.org/10.18637/jss.v108.i03</a>.
@@ -1609,6 +1179,15 @@ Card, David. 1993. <span>“Using <span>Geographic Variation</span> in <span>Col
 <div id="ref-chernozhukovchetverikovdemirerduflohansenetal2018ej" class="csl-entry">
 Chernozhukov, Victor, Denis Chetverikov, Mert Demirer, Esther Duflo, Christian Hansen, Whitney Newey, and James Robins. 2018. <span>“Double/Debiased Machine Learning for Treatment and Structural Parameters.”</span> <em>The Econometrics Journal</em> 21 (1): C1–68. <a href="https://doi.org/10.1111/ectj.12097">https://doi.org/10.1111/ectj.12097</a>.
 </div>
+<div id="ref-frolich2007joe" class="csl-entry">
+Frölich, Markus. 2007. <span>“Nonparametric <span>IV</span> Estimation of Local Average Treatment Effects with Covariates.”</span> <em>Journal of Econometrics</em>, Endogeneity, instruments and identification, 139 (1): 35–75. <a href="https://doi.org/10.1016/j.jeconom.2006.06.004">https://doi.org/10.1016/j.jeconom.2006.06.004</a>.
+</div>
+<div id="ref-gelbach2002taer" class="csl-entry">
+Gelbach, Jonah B. 2002. <span>“Public <span>Schooling</span> for <span>Young Children</span> and <span>Maternal Labor Supply</span>.”</span> <em>The American Economic Review</em> 92 (1): 307–22. <a href="https://www.jstor.org/stable/3083335">https://www.jstor.org/stable/3083335</a>.
+</div>
+<div id="ref-hastietibshiranifriedman2009" class="csl-entry">
+Hastie, Trevor, Robert Tibshirani, and J. H. Friedman. 2009. <em>The Elements of Statistical Learning: Data Mining, Inference, and Prediction</em>. 2nd ed. Springer Series in Statistics. New York, NY: Springer.
+</div>
 <div id="ref-ramsey1969jrsssbm" class="csl-entry">
 Ramsey, J. B. 1969. <span>“Tests for <span>Specification Errors</span> in <span>Classical Linear Least-Squares Regression Analysis</span>.”</span> <em>Journal of the Royal Statistical Society: Series B (Methodological)</em> 31 (2): 350–71. <a href="https://doi.org/10.1111/j.2517-6161.1969.tb00796.x">https://doi.org/10.1111/j.2517-6161.1969.tb00796.x</a>.
 </div>
@@ -1617,6 +1196,9 @@ Shea, Joshua, and Alexander Torgovitsky. 2023. <span>“Ivmte: <span>An R Packag
 </div>
 <div id="ref-sloczynskiuysalwooldridge2024job&amp;es" class="csl-entry">
 Słoczyński, Tymon, S. Derya Uysal, and Jeffrey M. Wooldridge. 2024. <span>“Abadie’s <span>Kappa</span> and <span>Weighting Estimators</span> of the <span>Local Average Treatment Effect</span>.”</span> <em>Journal of Business &amp; Economic Statistics</em>, April, 1–14. <a href="https://doi.org/10.1080/07350015.2024.2332763">https://doi.org/10.1080/07350015.2024.2332763</a>.
+</div>
+<div id="ref-tan2006jasa" class="csl-entry">
+Tan, Zhiqiang. 2006. <span>“A <span>Distributional Approach</span> for <span>Causal Inference Using Propensity Scores</span>.”</span> <em>Journal of the American Statistical Association</em>, December. <a href="https://doi.org/10.1198/016214506000000023">https://doi.org/10.1198/016214506000000023</a>.
 </div>
 </div>
 </div>

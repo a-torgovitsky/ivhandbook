@@ -15,7 +15,7 @@ bibliography: bibliography.bib
 ---
 
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, results='hide'}
 knitr::opts_chunk$set(error = TRUE) # Continue compiling and show errors
 knitr::opts_chunk$set(cache = TRUE)
 library("ivreg")
