@@ -1063,7 +1063,7 @@ set.seed(393813)
 f_covlist &lt;- paste(covlist, collapse = &quot; + &quot;)
 f_pscore &lt;- as.formula(paste(&quot;public ~ quarter + &quot;, f_covlist))
 f_mtr &lt;- as.formula(paste(&quot;~ u + &quot;, f_covlist))
-nbs &lt;- 10 # Make this larger in practice
+nbs &lt;- 100
 args &lt;- list(
   data = gelbach,
   outcome = &quot;work79&quot;,
@@ -1078,7 +1078,7 @@ r &lt;- do.call(ivmte::ivmte, args)
 r$point.estimate</code></pre>
 <pre><code>## [1] 0.02864251</code></pre>
 <pre class="r"><code>r$point.estimate.se</code></pre>
-<pre><code>## [1] 0.02307602</code></pre>
+<pre><code>## [1] 0.02198205</code></pre>
 <p>The <code>ivmte</code> package contains much more functionality; for full details, <a href="https://github.com/jkcshea/ivmte">see the repository</a> or <a href="https://muse.jhu.edu/pub/56/article/883476/pdf">the accompanying paper</a>. Here’s what it is doing under the hood in this simple example:</p>
 <pre class="r"><code># This function estimate the MTE and the implied ATE
 mte_ate &lt;- function(data) {
@@ -1116,7 +1116,7 @@ mte_ate(gelbach) # point estimate matches that from ivmte</code></pre>
   mte_ate(dfbs)
 }) %&gt;%
   sd() # standard error is similar</code></pre>
-<pre><code>## [1] 0.0136221</code></pre>
+<pre><code>## [1] 0.01952731</code></pre>
 </div>
 <div id="stata-4" class="section level2" number="6.4">
 <h2><span class="header-section-number">6.4</span> Stata</h2>
@@ -1129,10 +1129,10 @@ mte_ate(gelbach) # point estimate matches that from ivmte</code></pre>
 ## 
 ## . 
 ## . mtefe work79 (public = i.quarter) `X&#39;, ///
-## &gt;   polynomial(1) ///
-## &gt;   separate ///
-## &gt;   link(logit) ///
-## &gt;   noplot ///
+## &gt;   polynomial(1) /// Linear MTE/MTR curves
+## &gt;   separate /// We call this &quot;stratified&quot; in the handbook chapter
+## &gt;   link(logit) /// Propensity score estimates
+## &gt;   noplot /// Don&#39;t automatically make some (nice, but annoying) plots
 ## &gt;   bootreps(10) // Make this larger in practice
 ## (running mtefe_secondstage on estimation sample)
 ## 

@@ -649,7 +649,7 @@ set.seed(393813)
 f_covlist <- paste(covlist, collapse = " + ")
 f_pscore <- as.formula(paste("public ~ quarter + ", f_covlist))
 f_mtr <- as.formula(paste("~ u + ", f_covlist))
-nbs <- 10 # Make this larger in practice
+nbs <- 100
 args <- list(
   data = gelbach,
   outcome = "work79",
@@ -718,10 +718,10 @@ local X ///
   white num612 num1317 numge18 othrlt18 othrge18 grade centcity age age2
 
 mtefe work79 (public = i.quarter) `X', ///
-  polynomial(1) ///
-  separate ///
-  link(logit) ///
-  noplot ///
+  polynomial(1) /// Linear MTE/MTR curves
+  separate /// We call this "stratified" in the handbook chapter
+  link(logit) /// Propensity score estimates
+  noplot /// Don't automatically make some (nice, but annoying) plots
   bootreps(10) // Make this larger in practice
 ```
 
