@@ -547,18 +547,12 @@ Regardless, the fact that both estimates are considerably different from the PLI
 
 ## Stata
 
-It is unfortunately not possible to implement the DDML estimates in Stata at current using the `ddml` package, because the authors require the treatment to be binary in their error-checking.
-I expect this is because it's not widely appreciated that the same approach estimates an unconditional ACR for multivalued treatments.
-Hopefully the authors will fix this soon.
-(You could also try going into the code and removing the error-checking yourself. Everything substantive with the procedure should work out just fine.)
-In the meantime, we can demonstrate using `ddml` in Stata to estimate an unconditional LATE with a binarized treatment.
+Using `ddml` in Stata to estimate an unconditional ACR is quite similar to PLIV.
 
 ```{stata ddml-late-stata, echo = FALSE}
 use card.dta, replace
 local Y lwage
-// ddml for Stata throws an error if D is not binary
-gen college = educ >= 16
-local D college
+local D educ
 local Z nearc4
 local X south smsa smsa66 ///
   reg661 reg662 reg663 reg664 reg665 reg666 reg667 reg668 reg669 ///
