@@ -269,7 +269,7 @@ div.tocify {
 
 
 <div id="introduction" class="section level1" number="1">
-<h1><span class="header-section-number">1</span> Introduction</h1>
+<h1 number="1"><span class="header-section-number">1</span> Introduction</h1>
 <p>This document is a short guide to implementing some of the methods discussed in Mogstad and Torgovitsky (<a href="https://a-torgovitsky.github.io/ivhandbook.pdf">“Instrumental Variables with Heterogeneous Treatment Effects,” 2024, <em>Handbook of Labor Economics</em></a>). It describes how to:</p>
 <ul>
 <li>Conduct a RESET test of the null hypothesis that a linear IV specification is weakly causal.</li>
@@ -282,9 +282,9 @@ div.tocify {
 <p>Code for reproducing the results in the handbook chapter is available in the <a href="https://github.com/a-torgovitsky/ivhandbookReplication/">ivhandbookReplication repository</a>.</p>
 </div>
 <div id="packages-and-data" class="section level1" number="2">
-<h1><span class="header-section-number">2</span> Packages and data</h1>
+<h1 number="2"><span class="header-section-number">2</span> Packages and data</h1>
 <div id="r" class="section level2" number="2.1">
-<h2><span class="header-section-number">2.1</span> R</h2>
+<h2 number="2.1"><span class="header-section-number">2.1</span> R</h2>
 <p>I’m going to use some <code>tidyverse</code> tools in the following. Install them from CRAN with <code>install.packages(c(&quot;tidyverse&quot;, &quot;broom&quot;, &quot;purrr&quot;))</code>.</p>
 <pre class="r"><code>library(&quot;tidyverse&quot;)
 library(&quot;broom&quot;)
@@ -292,19 +292,19 @@ library(&quot;purrr&quot;)</code></pre>
 <p>You’ll see where I load other packages in the code below. These can be installed in the same way.</p>
 </div>
 <div id="stata" class="section level2" number="2.2">
-<h2><span class="header-section-number">2.2</span> Stata</h2>
+<h2 number="2.2"><span class="header-section-number">2.2</span> Stata</h2>
 <p>You’ll need to install some modules from SSC. I’ll show you which ones when we get there.</p>
 </div>
 <div id="card-data" class="section level2" number="2.3">
-<h2><span class="header-section-number">2.3</span> Card data</h2>
+<h2 number="2.3"><span class="header-section-number">2.3</span> Card data</h2>
 <p>The first three topics will be illustrated with the well-known <span class="citation">Card (1993)</span> <a href="https://raw.githubusercontent.com/a-torgovitsky/ivhandbook/main/card.dta">(link)</a> extract of the NLSY79. Card used distance to a four-year college (<code>nearc4</code>) as an instrument for educational attainment (<code>educ</code>) to estimate the effect of education on wages (<code>lwage</code>, measured in logs), also commonly described as the returns to education. The treatment is multivalued and the instrument is binary.</p>
 <pre class="r"><code>card &lt;- haven::read_dta(&quot;card.dta&quot;)</code></pre>
 </div>
 </div>
 <div id="does-linear-iv-estimate-a-causal-effect" class="section level1" number="3">
-<h1><span class="header-section-number">3</span> Does linear IV estimate a causal effect?</h1>
+<h1 number="3"><span class="header-section-number">3</span> Does linear IV estimate a causal effect?</h1>
 <div id="background" class="section level2" number="3.1">
-<h2><span class="header-section-number">3.1</span> Background</h2>
+<h2 number="3.1"><span class="header-section-number">3.1</span> Background</h2>
 <p>Conditioning on covariates is important for Card’s argument that distance to college is exogenous. For example, urban areas might be more likely to be close to a four-year college while also being relatively high-wage labor markets. Not conditioning on covariates leads to substantially different point estimates.</p>
 <pre class="r"><code>card &lt;- card %&gt;%
   mutate(
@@ -361,7 +361,7 @@ resettest(lr_zx, type = &quot;fitted&quot;, vcov = function(x) vcovHC(x, type = 
 ## RESET = 9.8868, df1 = 2, df2 = 2995, p-value = 5.252e-05</code></pre>
 </div>
 <div id="reset-with-multicollinearity-in-r" class="section level2" number="3.2">
-<h2><span class="header-section-number">3.2</span> RESET with multicollinearity in R</h2>
+<h2 number="3.2"><span class="header-section-number">3.2</span> RESET with multicollinearity in R</h2>
 <p>The <code>resettest</code> function doesn’t seem to be coded in a way that handles multicollinearity. For example, it throws an error about “aliased coefficients” if we include a superfluous region indicator when using a heteroskedasticity-robust variance-covariance matrix. (“Aliased coefficients” being another phrase for what economists would typically call perfect multicollinearity.)</p>
 <pre class="r"><code>covs_flist_mc &lt;- paste(covs_flist, &quot;+ reg667&quot;)
 lr_zx &lt;- lm(data = card, formula = as.formula(paste(&quot;Z ~ &quot;, covs_flist_mc)))
@@ -418,7 +418,7 @@ pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above</code></pre>
 <p>However you do it, the conclusion from the RESET test in this case is an overwhelming rejection of the null hypothesis. The null hypothesis is equivalent to the statement that the specification has rich covariates, which in turn is necessary (and in many cases sufficient) for the IV estimate to have a weakly causal interpretation. So rejecting the null here means that there is strong statistical evidence that Card’s estimate is not weakly causal; it is not a non-negatively weighted average of treatment effects.</p>
 </div>
 <div id="stata-1" class="section level2" number="3.3">
-<h2><span class="header-section-number">3.3</span> Stata</h2>
+<h2 number="3.3"><span class="header-section-number">3.3</span> Stata</h2>
 <p>A RESET test can be implemented in Stata with the postestimation command <code>estat ovtest</code>. The documentation on <code>ovtest</code> is pretty sparse, as are the options. As far as I can tell, the Stata routine cannot be made robust to heteroskedasticity, nor can the powers of the fitted values used in the test be changed. Here’s a demonstration of that, as well as code that allows you to implement the RESET test directly and get around these limitations.</p>
 <pre><code>## 
 ## . use card.dta, replace
@@ -515,9 +515,9 @@ pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above</code></pre>
 </div>
 </div>
 <div id="doubledebiased-machine-learning" class="section level1" number="4">
-<h1><span class="header-section-number">4</span> Double/debiased machine learning</h1>
+<h1 number="4"><span class="header-section-number">4</span> Double/debiased machine learning</h1>
 <div id="motivation" class="section level2" number="4.1">
-<h2><span class="header-section-number">4.1</span> Motivation</h2>
+<h2 number="4.1"><span class="header-section-number">4.1</span> Motivation</h2>
 <p>Using a nonparametric functional form for covariates is one way to address the problem of not having rich covariates. A low-tech nonparametric approach is to construct a saturated regression, in which there is one bin for each covariate value. These are the types of specifications that are assumed in <span class="citation">Angrist and Imbens (1995)</span> and <span class="citation">Angrist and Pischke (2009)</span> to justify linear IV estimates as representing something that is weakly causal. But using such a specification in Card’s application—as in many/most others—is not going to be feasible:</p>
 <pre class="r"><code>card %&gt;%
   select(all_of(covs)) %&gt;%
@@ -538,7 +538,7 @@ pchisq(ts, 2, lower.tail = FALSE) # Matches p-value above</code></pre>
 </ol>
 </div>
 <div id="r-1" class="section level2" number="4.2">
-<h2><span class="header-section-number">4.2</span> R</h2>
+<h2 number="4.2"><span class="header-section-number">4.2</span> R</h2>
 <p>The main step in using DDML is defining the ML algorithms. This is done with a list of lists. Each list in the list of lists has two components: (i) the name of the function used to call the algorithm and (ii) the additional arguments passed to the function. For the former, <code>ddml</code> includes wrappers to <code>ranger</code> and <code>xgboost</code>, which are popular packages for random forests and gradient-boosted trees, respectively. One can also define additional wrappers; see <a href="https://github.com/a-torgovitsky/ivhandbookReplication/blob/faa0c23335acafc39268386dca6cde64ab82ecee/R/card-ddml.R#L1C1-L73C2">this bit of code</a> in the replication repository for an example using neural networks from the <code>nnet</code> package. The second argument to each list is a set of tuning parameters. It can be difficult to know how to set these a priori, so it’s reasonable to view the same algorithm with different tuning parameters as a separate ML algorithm.</p>
 <p>Here’s an example with six algorithms consisting of three random forests and three gradient-boosted trees:</p>
 <pre class="r"><code>library(&quot;ddml&quot;)
@@ -636,7 +636,7 @@ median(pliv$est) # Recommended point estimate</code></pre>
 <p>In terms of the theory for heterogeneous treatment effects, this final estimate of 0.128 is one that can be said to be weakly causal with only nonparametric justification. Notice that it’s not much different than the original linear IV estimate in this case, but that doesn’t mean that the original linear IV estimate was somehow “correct.” Whether an estimand is weakly causal is about it’s underlying interpretation in terms of treatment effects. A non-negatively weighted estimand can be equal to a negatively-weighted one, but that doesn’t mean that they should be equally preferred.</p>
 </div>
 <div id="stata-2" class="section level2" number="4.3">
-<h2><span class="header-section-number">4.3</span> Stata</h2>
+<h2 number="4.3"><span class="header-section-number">4.3</span> Stata</h2>
 <p>The Stata package is also called <code>ddml</code>. It can be installed with <code>ssc install ddml</code>, but as of this writing that version is outdated, and it seems that some of the syntax has changed relative to what I show below. Install the more recent version this way instead:</p>
 <pre class="stata"><code>net install ddml, ///
   from(https://raw.githubusercontent.com/aahrens1/ddml/master) ///
@@ -786,13 +786,13 @@ median(pliv$est) # Recommended point estimate</code></pre>
 </div>
 </div>
 <div id="estimating-unconditional-lates-and-acrs" class="section level1" number="5">
-<h1><span class="header-section-number">5</span> Estimating unconditional LATEs and ACRs</h1>
+<h1 number="5"><span class="header-section-number">5</span> Estimating unconditional LATEs and ACRs</h1>
 <div id="motivation-1" class="section level2" number="5.1">
-<h2><span class="header-section-number">5.1</span> Motivation</h2>
+<h2 number="5.1"><span class="header-section-number">5.1</span> Motivation</h2>
 <p>The DDML PLIV estimate is weakly causal, which means that it is a non-negatively weighted average of ACRs for each covariate bin. The weights depend on the amount of treatment variation that the instrument induces in each covariate bin. The overall weighted average is difficult to interpret because it represents treatment effects for many different subpopulations all averaged together in ways that reflect more than just their proportion of the population. An easier quantity to interpret is the unconditional ACR, which is what one would be estimating if covariates were not needed to justify the instrument.</p>
 </div>
 <div id="r-2" class="section level2" number="5.2">
-<h2><span class="header-section-number">5.2</span> R</h2>
+<h2 number="5.2"><span class="header-section-number">5.2</span> R</h2>
 <p>There are a few ways to estimate an unconditional ACR. I’ll focus on two that I think are relatively easy to implement.</p>
 <p>The first is a different DDML estimator. The details are basically the same as in the previous section, except that the estimand is different and there are more unknown functions that need to be estimated nonparametrically. The syntax changes in only minor ways from the previous section.</p>
 <pre class="r"><code>acr_list &lt;- lapply(seq_len(10), function(i) do.call(ddml_late, args))</code></pre>
@@ -843,17 +843,14 @@ ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
 <p>This estimate is similar to the DDML ACR estimate with a similar standard error. It relies on the parametric assumption that we’ve correctly specified the probability of the instrument given the covariates as a logit. The DDML estimate by contrast is arguably fully nonparametric (given sufficiently expressive ML algorithms), but requires estimating a number of functions. Depending on your faith in nonparametrics, you might like this more or less. Regardless, the fact that both estimates are considerably different from the PLIV estimate should give pause to the idea that all non-negatively weighted averages are equally valuable.</p>
 </div>
 <div id="stata-3" class="section level2" number="5.3">
-<h2><span class="header-section-number">5.3</span> Stata</h2>
-<p>It is unfortunately not possible to implement the DDML estimates in Stata at current using the <code>ddml</code> package, because the authors require the treatment to be binary in their error-checking. I expect this is because it’s not widely appreciated that the same approach estimates an unconditional ACR for multivalued treatments. Hopefully the authors will fix this soon. (You could also try going into the code and removing the error-checking yourself. Everything substantive with the procedure should work out just fine.) In the meantime, we can demonstrate using <code>ddml</code> in Stata to estimate an unconditional LATE with a binarized treatment.</p>
+<h2 number="5.3"><span class="header-section-number">5.3</span> Stata</h2>
+<p>Using <code>ddml</code> in Stata to estimate an unconditional ACR is quite similar to PLIV.</p>
 <pre><code>## 
 ## . use card.dta, replace
 ## 
 ## . local Y lwage
 ## 
-## . // ddml for Stata throws an error if D is not binary
-## . gen college = educ &gt;= 16
-## 
-## . local D college
+## . local D educ
 ## 
 ## . local Z nearc4
 ## 
@@ -898,7 +895,7 @@ ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
 ## Learner Z1_pystacked added successfully.
 ## 
 ## . ddml crossfit, shortstack nostdstack finalest(nnls1)
-## note: treatment (college) = 1 in 215 cases when assignment (nearc4) = 0
+## note: treatment (educ) = 1 in 1 cases when assignment (nearc4) = 0
 ## Cross-fitting E[y|X,Z] equation: lwage
 ## Resample 1Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
 ## &gt; ing
@@ -914,7 +911,7 @@ ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
 ## Resample 5...
 ## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
 ## &gt; ing
-## Cross-fitting E[D|X,Z] equation: college
+## Cross-fitting E[D|X,Z] equation: educ
 ## Resample 1...
 ## Cross-fitting fold 1 2 3 4 5 ...completed cross-fitting...completed short-stack
 ## &gt; ing
@@ -954,50 +951,50 @@ ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
 ## Mata global (mname):    m0
 ## Dependent variable (Y): lwage
 ##  lwage learners:        Y1_pystacked
-## D equations (1):        college
-##  college learners:      D1_pystacked
+## D equations (1):        educ
+##  educ learners:         D1_pystacked
 ## Z equations (1):        nearc4
 ##  nearc4 learners:       Z1_pystacked
 ## 
 ## DDML estimation results (LATE):
 ## spec  r  Y(0) learner  Y(1) learner  D(0) learner  D(1) learner         b      
 ## &gt;   SE      Z learner
-##   ss  1  [shortstack]          [ss]          [ss]          [ss]     0.647    (0
-## &gt; .435)          [ss]
-##   ss  2  [shortstack]          [ss]          [ss]          [ss]     0.726    (0
-## &gt; .542)          [ss]
-##   ss  3  [shortstack]          [ss]          [ss]          [ss]     0.728    (0
-## &gt; .430)          [ss]
-##   ss  4  [shortstack]          [ss]          [ss]          [ss]     0.701    (0
-## &gt; .402)          [ss]
-##   ss  5  [shortstack]          [ss]          [ss]          [ss]     0.956    (0
-## &gt; .701)          [ss]
+##   ss  1  [shortstack]          [ss]          [ss]          [ss]     0.069    (0
+## &gt; .043)          [ss]
+##   ss  2  [shortstack]          [ss]          [ss]          [ss]     0.062    (0
+## &gt; .042)          [ss]
+##   ss  3  [shortstack]          [ss]          [ss]          [ss]     0.080    (0
+## &gt; .043)          [ss]
+##   ss  4  [shortstack]          [ss]          [ss]          [ss]     0.079    (0
+## &gt; .042)          [ss]
+##   ss  5  [shortstack]          [ss]          [ss]          [ss]     0.084    (0
+## &gt; .045)          [ss]
 ## 
 ## Mean/med Y(0) learner  Y(1) learner  D(0) learner  D(1) learner         b      
 ## &gt;   SE      Z learner
-##   ss mn  [shortstack]          [ss]          [ss]          [ss]     0.752    (0
-## &gt; .480)          [ss]
-##   ss md  [shortstack]          [ss]          [ss]          [ss]     0.726    (0
-## &gt; .442)          [ss]
+##   ss mn  [shortstack]          [ss]          [ss]          [ss]     0.075    (0
+## &gt; .044)          [ss]
+##   ss md  [shortstack]          [ss]          [ss]          [ss]     0.079    (0
+## &gt; .044)          [ss]
 ## 
 ## Shortstack DDML model (median over 5 resamples) (LATE)
 ## E[y|X,Z=0]   = Y_lwage_ss0                         Number of obs   =      3010
 ## E[y|X,Z=1]   = Y_lwage_ss1
-## E[D|X,Z=0]   = D_college_ss0
-## E[D|X,Z=1]   = D_college_ss1
+## E[D|X,Z=0]   = D_educ_ss0
+## E[D|X,Z=1]   = D_educ_ss1
 ## E[Z|X]       = Z_nearc4_ss
 ## ------------------------------------------------------------------------------
 ##              |               Robust
 ##        lwage | Coefficient  std. err.      z    P&gt;|z|     [95% conf. interval]
 ## -------------+----------------------------------------------------------------
-##      college |    .725656    .442449     1.64   0.101    -.1415281     1.59284
+##         educ |    .078724   .0441381     1.78   0.074    -.0077851    .1652331
 ## ------------------------------------------------------------------------------
 ## Stacking final estimator: nnls1
 ## Warning: 1 resamples had propensity scores trimmed to lower limit .01.
 ## 
 ## Summary over 5 resamples:
 ##        D eqn      mean       min       p25       p50       p75       max
-##      college      0.7516    0.6474    0.7014    0.7257    0.7280    0.9556</code></pre>
+##         educ      0.0749    0.0622    0.0689    0.0787    0.0805    0.0840</code></pre>
 <p>Implementing the IPSW estimator is easier in Stata than <code>R</code> thanks to <span class="citation">Słoczyński, Uysal, and Wooldridge (2024)</span>, who provided a companion module with their paper. The module can be installed with <code>ssc install kappalate</code>. (The name <code>kappalate</code> is a reference to <span class="citation">Abadie (2003)</span>’s <span class="math inline">\(\kappa\)</span>, to which the argument has some relationship, although really it originates from a simpler argument due to <span class="citation">Tan (2006)</span> and <span class="citation">Frölich (2007)</span>.) The module is quite easy to use and also provides analytic standard error estimates.</p>
 <pre><code>## 
 ## . use card.dta, replace
@@ -1033,18 +1030,18 @@ ipsw(card, paste(&quot;Z ~ &quot;, covs_flist))</code></pre>
 </div>
 </div>
 <div id="marginal-treatment-effects-with-a-binary-treatment" class="section level1" number="6">
-<h1><span class="header-section-number">6</span> Marginal treatment effects with a binary treatment</h1>
+<h1 number="6"><span class="header-section-number">6</span> Marginal treatment effects with a binary treatment</h1>
 <div id="motivation-2" class="section level2" number="6.1">
-<h2><span class="header-section-number">6.1</span> Motivation</h2>
+<h2 number="6.1"><span class="header-section-number">6.1</span> Motivation</h2>
 <p>Marginal treatment effect (MTE) methods use extrapolation to build estimates of quantities like the average treatment effect or average treatment on the treated that are not nonparametrically point identified under just exogeneity and monotonicity. See Section 4 of the handbook chapter for a thorough discussion. The most common implementation of the MTE idea is with a binary treatment, which is what we’ll explore here, since this is the only case for which software packages have been developed so far. Methods for multivalued treatments currently need to be coded up by hand. Section 4.5 of the handbook chapter provides some details for a linear regression based approach that extends the binary treatment case to ordered treatments.</p>
 </div>
 <div id="gelbach-data" class="section level2" number="6.2">
-<h2><span class="header-section-number">6.2</span> Gelbach data</h2>
+<h2 number="6.2"><span class="header-section-number">6.2</span> Gelbach data</h2>
 <p>We illustrate MTE methods for a binary treatment using an extract of the 1980 Census constructed by <span class="citation">Gelbach (2002)</span> <a href="https://raw.githubusercontent.com/a-torgovitsky/ivhandbook/main/gelbach.dta">(link)</a> that consists of single mothers whose youngest child was five years old in 1980. Gelbach used quarter of birth (<code>quarter</code>) as an instrument for public school enrollment (<code>public</code>) to estimate the effect of public school attendance on whether a mother worked (<code>work79</code> in the following). The treatment is binary and the instrument is multivalued.</p>
 <pre class="r"><code>gelbach &lt;- haven::read_dta(&quot;gelbach.dta&quot;)</code></pre>
 </div>
 <div id="r-3" class="section level2" number="6.3">
-<h2><span class="header-section-number">6.3</span> R</h2>
+<h2 number="6.3"><span class="header-section-number">6.3</span> R</h2>
 <p>The <code>ivmte</code> package developed by <span class="citation">Shea and Torgovitsky (2023)</span> can be used to implement MTE methods for a binary treatment. The package can be installed from CRAN, or directly from GitHub for the most up-to-date version by <code>devtools::install_github(&quot;jkcshea/ivmte&quot;)</code>. The following code shows how to use <code>ivmte</code> to estimate the average treatment effect through MTE extrapolation. The marginal treatment response (MTR) curves are specified as linear and additive in covariates.</p>
 <pre class="r"><code>library(ivmte)
 covlist &lt;- c(
@@ -1121,7 +1118,7 @@ mte_ate(gelbach) # point estimate matches that from ivmte</code></pre>
 <pre><code>## [1] 0.01952731</code></pre>
 </div>
 <div id="stata-4" class="section level2" number="6.4">
-<h2><span class="header-section-number">6.4</span> Stata</h2>
+<h2 number="6.4"><span class="header-section-number">6.4</span> Stata</h2>
 <p>The <code>mtefe</code> module developed by <span class="citation">Andresen (2018)</span> is an excellent implementation of MTE for Stata. It also has a large number of options and functionality that is well-explained in Andresen’s <em>Stata Journal</em> paper. It can be installed with <code>ssc install mtefe</code>. Here’s how to reproduce the above estimates for the <code>R</code> code.</p>
 <pre><code>## 
 ## . use gelbach.dta, replace
@@ -1215,7 +1212,7 @@ Ahrens, Achim, Christian B Hansen, Mark E Schaffer, and Thomas Wiemann. 2024b. <
 Andresen, Martin Eckhoff. 2018. <span>“Exploring <span>Marginal Treatment Effects</span>: <span>Flexible Estimation Using Stata</span>.”</span> <em>The Stata Journal: Promoting Communications on Statistics and Stata</em> 18 (1): 118–58. <a href="https://doi.org/10.1177/1536867X1801800108">https://doi.org/10.1177/1536867X1801800108</a>.
 </div>
 <div id="ref-angristimbens1995jotasa" class="csl-entry">
-Angrist, Joshua D., and Guido W. Imbens. 1995. <span>“Two-<span>Stage Least Squares Estimation</span> of <span>Average Causal Effects</span> in <span>Models</span> with <span>Variable Treatment Intensity</span>.”</span> <em>Journal of the American Statistical Association</em> 90 (430): 431–42. <a href="https://www.jstor.org/stable/2291054">https://www.jstor.org/stable/2291054</a>.
+Angrist, Joshua D., and Guido W. Imbens. 1995. <span>“Two-<span>Stage Least Squares Estimation</span> of <span>Average Causal Effects</span> in <span>Models</span> with <span>Variable Treatment Intensity</span>.”</span> <em>Journal of the American Statistical Association</em> 90 (430): 431–42. <a href="http://www.jstor.org/stable/2291054">http://www.jstor.org/stable/2291054</a>.
 </div>
 <div id="ref-angristpischke2009" class="csl-entry">
 Angrist, Joshua D., and Jörn-Steffen Pischke. 2009. <em>Mostly <span>Harmless Econometrics</span>: <span>An Empiricist</span>’s <span>Companion</span></em>. Princeton University Press.
@@ -1236,7 +1233,7 @@ Chernozhukov, Victor, Denis Chetverikov, Mert Demirer, Esther Duflo, Christian H
 Frölich, Markus. 2007. <span>“Nonparametric <span>IV</span> Estimation of Local Average Treatment Effects with Covariates.”</span> <em>Journal of Econometrics</em>, Endogeneity, instruments and identification, 139 (1): 35–75. <a href="https://doi.org/10.1016/j.jeconom.2006.06.004">https://doi.org/10.1016/j.jeconom.2006.06.004</a>.
 </div>
 <div id="ref-gelbach2002taer" class="csl-entry">
-Gelbach, Jonah B. 2002. <span>“Public <span>Schooling</span> for <span>Young Children</span> and <span>Maternal Labor Supply</span>.”</span> <em>The American Economic Review</em> 92 (1): 307–22. <a href="https://www.jstor.org/stable/3083335">https://www.jstor.org/stable/3083335</a>.
+Gelbach, Jonah B. 2002. <span>“Public <span>Schooling</span> for <span>Young Children</span> and <span>Maternal Labor Supply</span>.”</span> <em>The American Economic Review</em> 92 (1): 307–22. <a href="http://www.jstor.org/stable/3083335">http://www.jstor.org/stable/3083335</a>.
 </div>
 <div id="ref-hastietibshiranifriedman2009" class="csl-entry">
 Hastie, Trevor, Robert Tibshirani, and J. H. Friedman. 2009. <em>The Elements of Statistical Learning: Data Mining, Inference, and Prediction</em>. 2nd ed. Springer Series in Statistics. New York, NY: Springer.
